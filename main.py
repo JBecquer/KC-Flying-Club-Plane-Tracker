@@ -8,6 +8,31 @@ Author: Jordan Becquer
 import sys
 from math import radians, cos, sin, asin, sqrt
 import mysql.connector
+from getpass import getpass
+
+
+def mysql_connect(aircraft):
+    """
+    Connect to MySQL server, and grab database using aircraft ID
+    :param aircraft: Tail number of the aircraft
+    :type aircraft: str
+    :return: mysql.connector.connect() is pass, Exception if fail
+    """
+    # TODO FIGURE OUT A WAY TO VERIFY IF A CONNECTION HAS ALREADY BEEN ESTABLISHED, SO IT IS NOT NEEDED TO ENTER THE
+    #  PW MULTIPLE TIMES
+    try:
+        # Init connection to MySQL database
+        db = mysql.connector.connect(
+            host="localhost",
+            user="JBecquer",
+            passwd=getpass("Enter MySQL password: "),
+            database=aircraft
+        )
+        print(f" Database connection to {aircraft} successful.")
+        return db
+    except Exception as x:
+        print(f" Database connection failed!")
+        sys.exit(x)
 
 
 def flightaware_getter():
@@ -15,16 +40,11 @@ def flightaware_getter():
     pass
 
 
-def db_data_saver():
+def db_data_saver(fleet):
     """Export the web scrapped data into MySQL"""
 
-    # Init connection to MySQL database
-    db = mysql.connector.connect(
-        host="localhost",
-        user="JBecquer",
-        passwd=input("Enter MySQL password: "),
-        database="N81673"
-    )
+    # Establish connection with MySQL
+    db = mysql_connect(fleet[0])
 
     # TODO CLEAN-UP MYSQL SETUP
     # initialize the MySQL cursor
@@ -51,35 +71,30 @@ def db_data_saver():
                          (step[0], step[1], step[2], step[3], step[4], step[5]))
         db.commit()
 
+    # Print all from table Flight
     mycursor.execute("SELECT * FROM Flight")
-
     for x in mycursor:
         print(x)
 
+    db.close()
 
-def db_data_getter():
+def db_data_getter(fleet):
     """Import the data from MySQL and convert into pandas """
-    db = mysql.connector.connect(
-        host="localhost",
-        user="JBecquer",
-        passwd=input("Enter MySQL password: "),
-        database="N81673"
-    )
+
+    # Establish connection with MySQL
+    db = mysql_connect(fleet[0])
 
     mycursor = db.cursor()
+
+    db.cose()
     pass
 
 
-def calculate_stats():
+def calculate_stats(fleet):
     """ Calculate various stats related to the aircraft's history"""
 
-    # Init MySQL Database connection
-    db = mysql.connector.connect(
-        host="localhost",
-        user="JBecquer",
-        passwd=input("Enter MySQL password: "),
-        database="N81673"
-    )
+    # Establish connection with MySQL:
+    db = mysql_connect(fleet[0])
 
     def dist_travelled():
         """Calculate the total distance travelled by the aircraft using lat/long data.
@@ -149,6 +164,7 @@ def calculate_stats():
     time_aloft()
     airports_visited()
 
+    db.close()
 
 def local_area_map():
     """Use the lat/long data to plot a composite map of the KC area"""
@@ -162,10 +178,21 @@ def conus_area_map():
 
 def main():
     """Main entry point for the script."""
+
+    fleet = [
+        "N81673",  # Archer
+        "N3892Q",  # C172
+        "N20389",  # C172
+        "N182WK",  # C182
+        "N58843",  # C182
+        "N82145",  # Saratoga
+        "N4803P"   # Debonair
+    ]
+
+    # db_data_saver(fleet)
+    calculate_stats(fleet)
     pass
 
 
 if __name__ == "__main__":
-    # db_data_saver()
-    calculate_stats()
     sys.exit(main())
