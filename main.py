@@ -9,6 +9,9 @@ import sys
 from math import radians, cos, sin, asin, sqrt
 import mysql.connector
 from getpass import getpass
+import requests
+from bs4 import BeautifulSoup
+import pandas as pd
 
 
 def mysql_connect(aircraft):
@@ -37,6 +40,78 @@ def mysql_connect(aircraft):
 
 def flightaware_getter():
     """Web scraping to grab data from flight aware and save to file."""
+
+    # Make a GET request to flightaware
+    # TODO CREATE A WAY TO GET THE URL FOR NEW FLIGHT LEGS
+    # TODO TAKE IN AIRCRAFT ID, CHECK PAGE, CHECK IF ANY NEW FLIGHTS. IF YES, CONTINUE, ELSE EXIT
+    url = "https://flightaware.com/live/flight/N81673/history/20220717/1830Z/KMIW/KLXT/tracklog"
+    r = requests.get(url)
+    # Check the status code
+    if r.status_code != 200:
+        print(f" Failed to connect to FlightAware!")
+        print(f" status code: {r.status_code}")
+        sys.exit()
+
+    # Parse the HTML
+    soup = BeautifulSoup(r.text, "html.parser")
+
+    # Look for table "prettyTable"
+    try:
+        table = soup.find("table", class_="prettyTable fullWidth")
+    except Exception as e:
+        print(f" Error finding table on FlightAware!")
+        sys.exit(e)
+
+    # Defining of the dataframe
+    df = pd.DataFrame(columns=["Time", "Latitude", "Longitude", "Kts", "Altitude"])
+
+    # Scrape data
+    rows = table.find_all("tr")
+    # reject the first two rows, these are headers
+    for row in rows[2::]:
+        data = row.find_all("span", class_="show-for-medium-up")
+        # There should be 5 columns of data, reject any rows that do not have 5
+        # This may need to be cleaned up in the future
+        """
+        "span"
+        class_ = show-for-medium-up
+        [0] = Time (EDT)
+        [1] = Latitude
+        [2] = Longitude
+        [3] = altitude
+        [4] = Altitude delta
+        """
+        # if len(data) == 5:  # TODO 7/24/22 FIGURE HOW HOW TO SAVE THESE INTO PANDAS (ADD COLUMNS)
+        #     print(data[0].text)
+
+        # for row in table.find_all("tr"):
+        #     # Find all data for each column
+        #     columns = row.find_all("td")
+        #
+        #     if columns:
+        #         Time = columns[0].span.contents[0].strip()
+        # Latitude = columns[0].span.contents[0].strip()
+        # Longitude = columns[0].span.contents[0].strip()
+        # Time = columns[0].span.contents[0].strip()
+        # Time = columns[0].span.contents[0].strip()
+
+    # reject the first two rows, these are headers
+    for row in rows[2::]:
+        data = row.find_all("td", class_="show-for-medium-up-table")
+        # There should be 5 columns of data, reject any rows that do not have 5
+        # This may need to be cleaned up in the future
+        """
+        "td"
+        class_ = show-for-medium-up-table
+        [0] = kts
+        [1] = Altitude delta
+        """
+        # There should be 2 columns of data, reject any rows that do not have 5
+        # This may need to be cleaned up in the future
+        # if len(data) == 2:  # TODO ENABLE THIS
+        #     print(data[0].text)
+
+    df.head()
     pass
 
 
@@ -190,7 +265,8 @@ def main():
     ]
 
     # db_data_saver(fleet)
-    calculate_stats(fleet)
+    # calculate_stats(fleet)
+    flightaware_getter()
     pass
 
 
