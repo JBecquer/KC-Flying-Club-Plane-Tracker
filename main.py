@@ -85,7 +85,32 @@ def flightaware_getter():
     # ------------------------------------------------------------------------------------------------------------------
     #   Extract flight leg information
     # ------------------------------------------------------------------------------------------------------------------
-
+    try:
+        head = soup.find("head")
+        title = head.find("title").text
+        print(title)
+        title = list(title)
+        leg = []
+        # Extracting from: Flight Track Log ✈ N81673 22-Jul-2022 (MO3-KOJC) - FlightAware
+        # leg information is between the parenthesis, below code extracts and saves as separate objects
+        for i in range(len(title)):
+            if title[i] == "(":
+                i = i + 1
+                for j in range(len(title) - i):
+                    if title[i + j] == ")":
+                        print(leg)
+                        break
+                    else:
+                        leg.append(title[i + j])
+        leg = "".join(leg)
+        splitter = leg.split("-")
+        dep_airport = splitter[0]
+        dest_airport = splitter[1]
+        print(f" departure airport: {dep_airport}, destination airport: {dest_airport}")
+    except Exception as e:
+        print(f" Failed to extract departure and destination airports!")
+        print(f" error: {e}")
+        sys.exit()
     # ------------------------------------------------------------------------------------------------------------------
     #   Extract table data
     # ------------------------------------------------------------------------------------------------------------------
@@ -356,10 +381,10 @@ def main():
         "N82145",  # Saratoga
         "N4803P"  # Debonair
     ]
-    # flightaware_getter()
+    flightaware_getter()
     # db_data_saver(fleet)
     # db_data_getter(fleet)
-    calculate_stats(fleet)
+    # calculate_stats(fleet)
     pass
 
 
