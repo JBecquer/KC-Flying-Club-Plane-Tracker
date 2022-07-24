@@ -13,6 +13,10 @@ import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 from sqlalchemy import create_engine
+from shapely.geometry import Point
+import geopandas as gpd
+from geopandas import GeoDataFrame
+import matplotlib.pyplot as plt
 
 
 def mysql_connect(aircraft, pwd):
@@ -29,7 +33,7 @@ def mysql_connect(aircraft, pwd):
         # Init connection to MySQL database
         db = mysql.connector.connect(
             host="localhost",
-            user="JBecquer",
+            user="root",
             passwd=pwd,
             database=aircraft
         )
@@ -72,7 +76,7 @@ def flightaware_getter():
     # Make a GET request to flightaware
     # TODO CREATE A WAY TO GET THE URL FOR NEW FLIGHT LEGS
     # TODO TAKE IN AIRCRAFT ID, CHECK PAGE, CHECK IF ANY NEW FLIGHTS. IF YES, CONTINUE, ELSE EXIT
-    url = "https://flightaware.com/live/flight/N81673/history/20220722/2102Z/MO3/KOJC/tracklog"
+    url = "https://flightaware.com/live/flight/N81673/history/20220717/1522Z/KEZS/KMIW/tracklog"
     r = requests.get(url)
     # Check the status code
     if r.status_code != 200:
@@ -199,7 +203,7 @@ def db_data_saver(fleet):
 
 
     # Create SQLAlchemy engine to connect to MySQL Database
-    user = "JBecquer"
+    user = "root"
     passwd = pw
     database = "N81673"
     host_ip = '127.0.0.1'
@@ -233,7 +237,7 @@ def db_data_getter(fleet):
     mycursor = db.cursor()
 
     # Create SQLAlchemy engine to connect to MySQL Database
-    user = "JBecquer"
+    user = "root"
     passwd = pw
     database = "N81673"
     host_ip = '127.0.0.1'
@@ -360,15 +364,41 @@ def calculate_stats(fleet):
     db.close()
 
 
+def state_plotter(states, us_map=True):
+    """
+    Return ax to be used with geopandas
+    :param states: States to be mapped
+    :param us_map: True if CONUS, False if "zoomed in". True will result in "highlighted" states
+    :return:
+    """
+    usa = gpd.read_file("states_21basic/states.shp")
+
+    fig, ax = plt.subplots(figsize=(10, 10))
+
+    if us_map:
+        usa[1:50].plot(ax=ax, alpha=0.3)
+
+        for n in states:
+            usa[usa.STATE_ABBR == f"{n}"].plot(ax=ax, edgecolor="y", linewidth=2)
+
+    elif not us_map:
+        for n in states:
+            usa[usa.STATE_ABBR == f"{n}"].plot(ax=ax, edgecolor="y", linewidth=2)
+    return ax
+
 def local_area_map(fleet):
     """Use the lat/long data to plot a composite map of the KC area"""
 
     df = db_data_getter(fleet)
 
     # grab the latitude and longitude data from the panda dataframe
-    latitude = df.iloc[:, 1]
-    longitude = df.iloc[:, 2]
-    print(type(latitude))
+    geometry = [Point(xy) for xy in zip(df["Longitude"], df["Latitude"])]
+    gdf = GeoDataFrame(df, geometry=geometry)
+
+
+    ax = state_plotter(["KS", "MO"], us_map=False)
+    gdf.plot(ax=ax, color="red")
+    plt.show()
     pass
 
 
