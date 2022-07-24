@@ -39,12 +39,15 @@ def mysql_connect(aircraft):
 
 
 def flightaware_getter():
-    """Web scraping to grab data from flight aware and save to file."""
+    """
+    Web scraping to grab data from flight aware and save to file.
+    :return: Panda dataframe containing list[time, lat, long, kts, altitude]
+    """
 
     # Make a GET request to flightaware
     # TODO CREATE A WAY TO GET THE URL FOR NEW FLIGHT LEGS
     # TODO TAKE IN AIRCRAFT ID, CHECK PAGE, CHECK IF ANY NEW FLIGHTS. IF YES, CONTINUE, ELSE EXIT
-    url = "https://flightaware.com/live/flight/N81673/history/20220717/1830Z/KMIW/KLXT/tracklog"
+    url = "https://flightaware.com/live/flight/N81673/history/20220722/2102Z/MO3/KOJC/tracklog"
     r = requests.get(url)
     # Check the status code
     if r.status_code != 200:
@@ -54,7 +57,13 @@ def flightaware_getter():
 
     # Parse the HTML
     soup = BeautifulSoup(r.text, "html.parser")
+    # ------------------------------------------------------------------------------------------------------------------
+    #   Extract flight leg information
+    # ------------------------------------------------------------------------------------------------------------------
 
+    # ------------------------------------------------------------------------------------------------------------------
+    #   Extract table data
+    # ------------------------------------------------------------------------------------------------------------------
     # Look for table "prettyTable"
     try:
         table = soup.find("table", class_="prettyTable fullWidth")
@@ -69,9 +78,6 @@ def flightaware_getter():
     rows = table.find_all("tr")
     # reject the first two rows, these are headers
     for row in rows[2::]:
-        data = row.find_all("span", class_="show-for-medium-up")
-        # There should be 5 columns of data, reject any rows that do not have 5
-        # This may need to be cleaned up in the future
         """
         "span"
         class_ = show-for-medium-up
@@ -80,38 +86,33 @@ def flightaware_getter():
         [2] = Longitude
         [3] = altitude
         [4] = Altitude delta
-        """
-        # if len(data) == 5:  # TODO 7/24/22 FIGURE HOW HOW TO SAVE THESE INTO PANDAS (ADD COLUMNS)
-        #     print(data[0].text)
-
-        # for row in table.find_all("tr"):
-        #     # Find all data for each column
-        #     columns = row.find_all("td")
-        #
-        #     if columns:
-        #         Time = columns[0].span.contents[0].strip()
-        # Latitude = columns[0].span.contents[0].strip()
-        # Longitude = columns[0].span.contents[0].strip()
-        # Time = columns[0].span.contents[0].strip()
-        # Time = columns[0].span.contents[0].strip()
-
-    # reject the first two rows, these are headers
-    for row in rows[2::]:
-        data = row.find_all("td", class_="show-for-medium-up-table")
-        # There should be 5 columns of data, reject any rows that do not have 5
-        # This may need to be cleaned up in the future
-        """
+        ~~~~~~~~~~~~~~~~~~~
         "td"
         class_ = show-for-medium-up-table
         [0] = kts
         [1] = Altitude delta
         """
-        # There should be 2 columns of data, reject any rows that do not have 5
-        # This may need to be cleaned up in the future
-        # if len(data) == 2:  # TODO ENABLE THIS
-        #     print(data[0].text)
+        builder = []
+        if len(row) == 21:
+            columns = row.find_all('span', class_="show-for-medium-up")
+            if len(columns) == 5:
+                time = columns[0].text
+                latitude = columns[1].text
+                longitude = columns[2].text
+                altitude = columns[3].text
+            else:
+                continue
+            kts_columns = row.find_all("td", class_="show-for-medium-up-table")
+            if len(kts_columns) == 2:
+                kts = kts_columns[0].text
+            else:
+                continue
+            builder = [time, latitude, longitude, kts, altitude]
+        # Sometimes an empty list is generated due to scraping, reject these.
+        if len(builder) == 5:
+            df.loc[len(df)] = builder
 
-    df.head()
+    print(df)
     pass
 
 
@@ -152,6 +153,7 @@ def db_data_saver(fleet):
         print(x)
 
     db.close()
+
 
 def db_data_getter(fleet):
     """Import the data from MySQL and convert into pandas """
@@ -241,6 +243,7 @@ def calculate_stats(fleet):
 
     db.close()
 
+
 def local_area_map():
     """Use the lat/long data to plot a composite map of the KC area"""
     pass
@@ -261,7 +264,7 @@ def main():
         "N182WK",  # C182
         "N58843",  # C182
         "N82145",  # Saratoga
-        "N4803P"   # Debonair
+        "N4803P"  # Debonair
     ]
 
     # db_data_saver(fleet)
