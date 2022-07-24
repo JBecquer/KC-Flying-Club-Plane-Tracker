@@ -107,6 +107,7 @@ def flightaware_getter():
         dep_airport = splitter[0]
         dest_airport = splitter[1]
         print(f" departure airport: {dep_airport}, destination airport: {dest_airport}")
+        # TODO ADD RETURN
     except Exception as e:
         print(f" Failed to extract departure and destination airports!")
         print(f" error: {e}")
@@ -359,8 +360,15 @@ def calculate_stats(fleet):
     db.close()
 
 
-def local_area_map():
+def local_area_map(fleet):
     """Use the lat/long data to plot a composite map of the KC area"""
+
+    df = db_data_getter(fleet)
+
+    # grab the latitude and longitude data from the panda dataframe
+    latitude = df.iloc[:, 1]
+    longitude = df.iloc[:, 2]
+    print(type(latitude))
     pass
 
 
@@ -381,10 +389,11 @@ def main():
         "N82145",  # Saratoga
         "N4803P"  # Debonair
     ]
-    flightaware_getter()
+    # flightaware_getter()
     # db_data_saver(fleet)
     # db_data_getter(fleet)
     # calculate_stats(fleet)
+    local_area_map(fleet)
     pass
 
 
