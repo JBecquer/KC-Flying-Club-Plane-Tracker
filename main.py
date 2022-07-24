@@ -396,7 +396,7 @@ def local_area_map(fleet):
     gdf = GeoDataFrame(df, geometry=geometry)
 
 
-    ax = state_plotter(["KS", "MO"], us_map=False)
+    ax = state_plotter(["WI", "IA", "MN"], us_map=False)
     gdf.plot(ax=ax, color="red")
     plt.show()
     pass
@@ -419,10 +419,10 @@ def main():
         "N82145",  # Saratoga
         "N4803P"  # Debonair
     ]
-    # flightaware_getter()
-    # db_data_saver(fleet)
-    # db_data_getter(fleet)
-    # calculate_stats(fleet)
+    # flightaware_getter()  # DOES NOT NEED TO BE CALLED HERE, FOR TEST PURPOSES ONLY
+    db_data_saver(fleet)
+    db_data_getter(fleet)
+    calculate_stats(fleet)
     local_area_map(fleet)
     pass
 
