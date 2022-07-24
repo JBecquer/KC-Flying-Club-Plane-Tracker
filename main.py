@@ -43,6 +43,29 @@ def flightaware_getter():
     Web scraping to grab data from flight aware and save to file.
     :return: Panda dataframe containing list[time, lat, long, kts, altitude]
     """
+    def convert24(str1):
+        """
+        Convert from 12-hour to 24-hour format
+        :param str1: 12-hour time string with AM/PM suffix
+        :return: 24-hour format (HH:MM:SS)
+        :rtype: str
+        """
+        # Checking if last two elements of time
+        # is AM and first two elements are 12
+        if str1[-2:] == "AM" and str1[:2] == "12":
+            return "00" + str1[2:-2]
+
+        # remove the AM
+        elif str1[-2:] == "AM":
+            return str1[:-2]
+
+        # Checking if last two elements of time
+        # is PM and first two elements are 12
+        elif str1[-2:] == "PM" and str1[:2] == "12":
+            return str1[:-2]
+        else:
+            # add 12 to hours and remove PM
+            return str(int(str1[:2]) + 12) + str1[2:8]
 
     # Make a GET request to flightaware
     # TODO CREATE A WAY TO GET THE URL FOR NEW FLIGHT LEGS
@@ -96,63 +119,70 @@ def flightaware_getter():
         if len(row) == 21:
             columns = row.find_all('span', class_="show-for-medium-up")
             if len(columns) == 5:
-                time = columns[0].text
-                latitude = columns[1].text
-                longitude = columns[2].text
-                altitude = columns[3].text
+                time = columns[0].text.strip()
+                time = time[3::].strip()  # remove the leading three letter weekday
+                time = convert24(time)  # convert from 12-hour to 24-hour
+                latitude = columns[1].text.strip()
+                longitude = columns[2].text.strip()
+                altitude = columns[3].text.strip()
+                altitude = altitude.replace(",", "")  # remove the comma to allow int() conversion
             else:
                 continue
             kts_columns = row.find_all("td", class_="show-for-medium-up-table")
             if len(kts_columns) == 2:
-                kts = kts_columns[0].text
+                kts = kts_columns[0].text.strip()
             else:
                 continue
-            builder = [time, latitude, longitude, kts, altitude]
+            builder = [time, float(latitude), float(longitude), int(kts), int(altitude)]
         # Sometimes an empty list is generated due to scraping, reject these.
         if len(builder) == 5:
             df.loc[len(df)] = builder
 
-    print(df)
-    pass
+    return df
 
 
 def db_data_saver(fleet):
     """Export the web scrapped data into MySQL"""
 
+    # Get pandas dataframe
+    df = flightaware_getter()
+
+    print(df)
+
     # Establish connection with MySQL
-    db = mysql_connect(fleet[0])
-
-    # TODO CLEAN-UP MYSQL SETUP
-    # initialize the MySQL cursor
-    mycursor = db.cursor()
-
-    # Create a database
-    # mycursor.execute("CREATE DATABASE [IF NOT EXIST] N81673")
-
-    # Create a table
-    # mycursor.execute("CREATE TABLE Flight (Date DATE, Time TIME, Latitude FLOAT, Longitude FLOAT, Knots TINYINT(3),
-    # Altitude MEDIUMINT(5))")
-
-    # Delete a table
-    # mycursor.execute("DROP TABLE Flight")
-
-    dummy_data = [["2022-7-22", "01:19:23", 42.1152, -92.9207, 88, 1000],
-                  ["2022-7-22", "01:19:39", 42.1193, -92.9279, 89, 1200],
-                  ["2022-7-22", "01:19:55", 42.1207, -92.9358, 89, 1400]
-                  ]
-
-    for step in dummy_data:
-        mycursor.execute("INSERT INTO Flight (Date, Time, Latitude, Longitude, Knots, Altitude) "
-                         "VALUES (%s,%s,%s,%s,%s,%s)",
-                         (step[0], step[1], step[2], step[3], step[4], step[5]))
-        db.commit()
-
-    # Print all from table Flight
-    mycursor.execute("SELECT * FROM Flight")
-    for x in mycursor:
-        print(x)
-
-    db.close()
+    # db = mysql_connect(fleet[0])
+    #
+    # # TODO CLEAN-UP MYSQL SETUP
+    # # initialize the MySQL cursor
+    # mycursor = db.cursor()
+    #
+    # # Create a database
+    # # mycursor.execute("CREATE DATABASE [IF NOT EXIST] N81673")
+    #
+    # # Create a table
+    # # mycursor.execute("CREATE TABLE Flight (Date DATE, Time TIME, Latitude FLOAT, Longitude FLOAT, Knots TINYINT(3),
+    # # Altitude MEDIUMINT(5))")
+    #
+    # # Delete a table
+    # # mycursor.execute("DROP TABLE Flight")
+    #
+    # dummy_data = [["2022-7-22", "01:19:23", 42.1152, -92.9207, 88, 1000],
+    #               ["2022-7-22", "01:19:39", 42.1193, -92.9279, 89, 1200],
+    #               ["2022-7-22", "01:19:55", 42.1207, -92.9358, 89, 1400]
+    #               ]
+    #
+    # for step in dummy_data:
+    #     mycursor.execute("INSERT INTO Flight (Date, Time, Latitude, Longitude, Knots, Altitude) "
+    #                      "VALUES (%s,%s,%s,%s,%s,%s)",
+    #                      (step[0], step[1], step[2], step[3], step[4], step[5]))
+    #     db.commit()
+    #
+    # # Print all from table Flight
+    # mycursor.execute("SELECT * FROM Flight")
+    # for x in mycursor:
+    #     print(x)
+    #
+    # db.close()
 
 
 def db_data_getter(fleet):
@@ -267,9 +297,9 @@ def main():
         "N4803P"  # Debonair
     ]
 
-    # db_data_saver(fleet)
+    db_data_saver(fleet)
     # calculate_stats(fleet)
-    flightaware_getter()
+    # flightaware_getter()
     pass
 
 
