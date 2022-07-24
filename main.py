@@ -195,26 +195,49 @@ def db_data_saver(fleet):
 
 
 def db_data_getter(fleet):
-    """Import the data from MySQL and convert into pandas """
+    """
+    Import the data from MySQL and convert into pandas dataframe
+    :return: pandas dataframe
+    """
 
-    # Establish connection with MySQL
-    db = mysql_connect(fleet[0])
+    pw = getpass(" Enter MySQL password: ")
 
+    # Establish connection with MySQL and init cursor
+    db = mysql_connect(fleet[0], pw)
     mycursor = db.cursor()
 
-    db.cose()
-    pass
+    # Create SQLAlchemy engine to connect to MySQL Database
+    user = "JBecquer"
+    passwd = pw
+    database = "N81673"
+    host_ip = '127.0.0.1'
+    port = "3306"
+
+    engine = create_engine(
+        'mysql+mysqlconnector://' + user + ':' + passwd + '@' + host_ip + ':' + port + '/' + database,
+        echo=False)
+
+    try:
+        query = "SELECT * FROM flight"
+        res_df = pd.read_sql(query, engine)
+    except Exception as e:
+        db.close()
+        print(str(e))
+        sys.exit()
+
+    db.close()
+    return res_df
 
 
 def calculate_stats(fleet):
     """ Calculate various stats related to the aircraft's history"""
 
     # Establish connection with MySQL:
-    db = mysql_connect(fleet[0])
+    db = mysql_connect(fleet[0], getpass("Enter MySQL password: "))
 
     def dist_travelled():
-        """Calculate the total distance travelled by the aircraft using lat/long data.
-
+        """
+        Calculate the total distance travelled by the aircraft using lat/long data.
         :return: Total distance travelled in miles
         :rtype: float(2)
         """
@@ -252,7 +275,7 @@ def calculate_stats(fleet):
         mycursor = db.cursor()
 
         # grab the latitude and longitude data from MySQL
-        mycursor.execute("SELECT Latitude, Longitude FROM Flight")
+        mycursor.execute("SELECT Latitude, Longitude FROM flight")
 
         latitude = []
         longitude = []
@@ -261,15 +284,43 @@ def calculate_stats(fleet):
             longitude.append(x[1])
 
         total_dist = 0
-        # TODO CREATE AN EXCEPTION FOR WHEN LEN(LAT) != LEN(LONG)
         for x in range(len(latitude[:-1:])):
             total_dist += lat_long_dist(latitude[x], latitude[x + 1], longitude[x], longitude[x + 1])
         print(f" The total distance travelled was {round(total_dist, 2)} Miles")
         return total_dist
 
     def time_aloft():
-        """Calculate the max time aloft by using the aircraft in-air data"""
-        pass
+        """
+        Calculate the max time aloft by using the aircraft in-air data
+        :return: time aloft as a timedelta format
+        """
+        # initialize the MySQL cursor
+        mycursor = db.cursor()
+
+        # grab the latitude and longitude data from MySQL
+        mycursor.execute("SELECT Time FROM flight")
+
+        time = []
+        for x in mycursor:
+            time.append(x)
+
+        start_time = time[0]
+        end_time = time[-1]
+        time_delta = end_time[0] - start_time[0]
+
+        def strfdelta(tdelta, fmt):
+            """
+            Takes timedelta and returns a format that can be used to print hours and minutes
+            :param tdelta: flight time (end time - start time) in timedelta format
+            :return: a format that allows reporting of {hours}, {minutes}, and {seconds}
+            """
+            d = {"days": tdelta.days}
+            d["hours"], rem = divmod(tdelta.seconds, 3600)
+            d["minutes"], d["seconds"] = divmod(rem, 60)
+            return fmt.format(**d)
+
+        print(strfdelta(time_delta, " The trip took {hours} hours and {minutes} minutes"))
+        return time_delta
 
     def airports_visited():
         """Determine the airports visited"""
@@ -305,10 +356,10 @@ def main():
         "N82145",  # Saratoga
         "N4803P"  # Debonair
     ]
-
-    db_data_saver(fleet)
-    # calculate_stats(fleet)
     # flightaware_getter()
+    # db_data_saver(fleet)
+    # db_data_getter(fleet)
+    calculate_stats(fleet)
     pass
 
 
