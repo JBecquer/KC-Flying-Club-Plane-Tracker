@@ -6,3 +6,4 @@ soupsieve==2.3.2.post1
 beautifulsoup4==4.11.1
 SQLAlchemy==1.4.39
 greenlet==1.1.2
+pymysql==1.0.2
