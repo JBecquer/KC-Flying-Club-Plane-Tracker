@@ -12,13 +12,15 @@ from getpass import getpass
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
+from sqlalchemy import create_engine
 
 
-def mysql_connect(aircraft):
+def mysql_connect(aircraft, pwd):
     """
     Connect to MySQL server, and grab database using aircraft ID
     :param aircraft: Tail number of the aircraft
     :type aircraft: str
+    :param pwd: getpass() password, to avoid having to call it multiple times
     :return: mysql.connector.connect() is pass, Exception if fail
     """
     # TODO FIGURE OUT A WAY TO VERIFY IF A CONNECTION HAS ALREADY BEEN ESTABLISHED, SO IT IS NOT NEEDED TO ENTER THE
@@ -28,7 +30,7 @@ def mysql_connect(aircraft):
         db = mysql.connector.connect(
             host="localhost",
             user="JBecquer",
-            passwd=getpass("Enter MySQL password: "),
+            passwd=pwd,
             database=aircraft
         )
         print(f" Database connection to {aircraft} successful.")
@@ -95,7 +97,7 @@ def flightaware_getter():
         sys.exit(e)
 
     # Defining of the dataframe
-    df = pd.DataFrame(columns=["Time", "Latitude", "Longitude", "Kts", "Altitude"])
+    df = pd.DataFrame(columns=["Time", "Latitude", "Longitude", "Knots", "Altitude"])
 
     # Scrape data
     rows = table.find_all("tr")
@@ -133,56 +135,63 @@ def flightaware_getter():
                 kts = kts_columns[0].text.strip()
             else:
                 continue
-            builder = [time, float(latitude), float(longitude), int(kts), int(altitude)]
+            builder = [time, latitude, longitude, kts, altitude]
         # Sometimes an empty list is generated due to scraping, reject these.
         if len(builder) == 5:
             df.loc[len(df)] = builder
-
     return df
 
 
 def db_data_saver(fleet):
-    """Export the web scrapped data into MySQL"""
+    """
+    Export the web scrapped panda dataframe into MySQL
+    :param fleet: list of club aircraft
+    """
+
+    pw = getpass("Enter MySQL password: ")
 
     # Get pandas dataframe
     df = flightaware_getter()
 
-    print(df)
+    # Establish connection with MySQL and initialize the cursor
+    db = mysql_connect(fleet[0], pw)
+    mycursor = db.cursor()
 
-    # Establish connection with MySQL
-    # db = mysql_connect(fleet[0])
-    #
-    # # TODO CLEAN-UP MYSQL SETUP
-    # # initialize the MySQL cursor
-    # mycursor = db.cursor()
-    #
-    # # Create a database
-    # # mycursor.execute("CREATE DATABASE [IF NOT EXIST] N81673")
-    #
-    # # Create a table
-    # # mycursor.execute("CREATE TABLE Flight (Date DATE, Time TIME, Latitude FLOAT, Longitude FLOAT, Knots TINYINT(3),
-    # # Altitude MEDIUMINT(5))")
-    #
-    # # Delete a table
-    # # mycursor.execute("DROP TABLE Flight")
-    #
-    # dummy_data = [["2022-7-22", "01:19:23", 42.1152, -92.9207, 88, 1000],
-    #               ["2022-7-22", "01:19:39", 42.1193, -92.9279, 89, 1200],
-    #               ["2022-7-22", "01:19:55", 42.1207, -92.9358, 89, 1400]
-    #               ]
-    #
-    # for step in dummy_data:
-    #     mycursor.execute("INSERT INTO Flight (Date, Time, Latitude, Longitude, Knots, Altitude) "
-    #                      "VALUES (%s,%s,%s,%s,%s,%s)",
-    #                      (step[0], step[1], step[2], step[3], step[4], step[5]))
-    #     db.commit()
-    #
+    # Delete a table
+    mycursor.execute("DROP TABLE Flight")
+
+    # Create a table
+    mycursor.execute("CREATE TABLE IF NOT EXISTS flight("
+                     "Time TIME, "
+                     "Latitude FLOAT, "
+                     "Longitude FLOAT, "
+                     "Knots MEDIUMINT(5), "
+                     "Altitude MEDIUMINT(5))")
+
+    # Delete a table
+    # mycursor.execute("DROP TABLE Flight")
+
+
+    # Create SQLAlchemy engine to connect to MySQL Database
+    user = "JBecquer"
+    passwd = pw
+    database = "N81673"
+    host_ip = '127.0.0.1'
+    port = "3306"
+
+    engine = create_engine(
+        'mysql+mysqlconnector://' + user + ':' + passwd + '@' + host_ip + ':' + port + '/' + database,
+        echo=False)
+
+    # Convert dataframe to sql table
+    df.to_sql('flight', engine, if_exists="append", index=False)
+
     # # Print all from table Flight
-    # mycursor.execute("SELECT * FROM Flight")
-    # for x in mycursor:
-    #     print(x)
-    #
-    # db.close()
+    mycursor.execute("SELECT * FROM Flight")
+    for x in mycursor:
+        print(x)
+
+    db.close()
 
 
 def db_data_getter(fleet):
