@@ -42,6 +42,103 @@ def mysql_connect(aircraft):
         print(f" Database connection failed!")
         sys.exit(x)
 
+        
+def between_parentheses(s):
+    """
+    Take in a string and return what is in-between the parentheses.  # TODO CREATE ERROR CONDITIONS
+    :param s:
+    :return:
+    """
+    res = []
+    # Extracting from: Flight Track Log ✈ N81673 22-Jul-2022 (MO3-KOJC) - FlightAware
+    # leg information is between the parenthesis, below code extracts and saves as separate objects
+    for i in range(len(s)):
+        if s[i] == "(":
+            i = i + 1
+            for j in range(len(s) - i):
+                if s[i + j] == ")":
+                    return "".join(res)
+                else:
+                    res.append(s[i + j])
+
+
+def flightaware_history(aircraft):
+    """
+    Grab the aircraft history from flight aware and return pandas dataframe.
+    :param aircraft: aircraft ID. ex: N182WK
+    :type aircraft: str
+    :return: pandas df = [date, route, URL]
+    """
+    # Make a GET request to flightaware
+    url = f"https://flightaware.com/live/flight/{aircraft}/history"
+    r = requests.get(url)
+    # Check the status code
+    if r.status_code != 200:
+        print(f" Failed to connect to FlightAware!")
+        print(f" status code: {r.status_code}")
+        sys.exit()
+
+    # Parse the HTML
+    soup = BeautifulSoup(r.text, "html.parser")
+
+    try:
+        # ------------------------------------------------------------------------------------------------------------------
+        #   Extract table data
+        # ------------------------------------------------------------------------------------------------------------------
+        # Look for table "prettyTable fullWidth tablesaw tablesaw-stack"
+        try:
+            table = soup.find("table", class_="prettyTable fullWidth tablesaw tablesaw-stack")
+        except Exception as e:
+            print(f" Error finding aircraft history table on FlightAware!")
+            sys.exit(e)
+
+        # Define of the dataframe
+        df = pd.DataFrame(columns=["Date", "Route", "Url"])
+
+        # Scrape data
+        rows = table.find_all("tr")
+        for row in rows[1:-1:]:
+            urls = row.find_all("a", href=True)[0]
+            url = urls.get("href")
+            """
+            indexed column data
+            [0] Date
+            [1] Aircraft Type
+            [2] Origin
+            [3] Destination
+            [4] Departure time
+            [5] Arrival time
+            [6] Total time
+            """
+            columns = row.find_all("td")
+            date = columns[0].text
+            # If the airport is unknown it is listed as "Near" and no airport code given.
+            # In these cases, replace the airport code with "UNKW" for unknown
+            if "Near" in columns[2].text:
+                origin = "UNKW"
+            else:
+                origin = between_parentheses(columns[2].text)
+            if "Near" in columns[3].text:
+                destination = "UNKW"
+            else:
+                destination = between_parentheses(columns[3].text)
+
+            route = origin + "-" + destination
+
+            # build a row to be exported to pandas
+            out = [date, route, url]
+
+            # build pandas. Len == 3 ensures all data has been collected
+            if len(out) == 3:
+                df.loc[len(df)] = out
+        print(df)
+        return df
+
+    except Exception as e:
+        print(f" Failed to extract flight history!")
+        print(f" error: {e}")
+        sys.exit()        
+  
 
 def flightaware_getter():
     """
