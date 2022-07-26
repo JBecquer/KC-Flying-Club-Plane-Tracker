@@ -19,12 +19,11 @@ from geopandas import GeoDataFrame
 import matplotlib.pyplot as plt
 
 
-def mysql_connect(aircraft, pwd):
+def mysql_connect(aircraft):
     """
     Connect to MySQL server, and grab database using aircraft ID
     :param aircraft: Tail number of the aircraft
     :type aircraft: str
-    :param pwd: getpass() password, to avoid having to call it multiple times
     :return: mysql.connector.connect() is pass, Exception if fail
     """
     # TODO FIGURE OUT A WAY TO VERIFY IF A CONNECTION HAS ALREADY BEEN ESTABLISHED, SO IT IS NOT NEEDED TO ENTER THE
@@ -34,7 +33,7 @@ def mysql_connect(aircraft, pwd):
         db = mysql.connector.connect(
             host="localhost",
             user="root",
-            passwd=pwd,
+            passwd=pw,
             database=aircraft
         )
         print(f" Database connection to {aircraft} successful.")
@@ -178,13 +177,11 @@ def db_data_saver(fleet):
     :param fleet: list of club aircraft
     """
 
-    pw = getpass("Enter MySQL password: ")
-
     # Get pandas dataframe
     df = flightaware_getter()
 
     # Establish connection with MySQL and initialize the cursor
-    db = mysql_connect(fleet[0], pw)
+    db = mysql_connect(fleet[0])
     mycursor = db.cursor()
 
     # Delete a table
@@ -230,10 +227,8 @@ def db_data_getter(fleet):
     :return: pandas dataframe
     """
 
-    pw = getpass(" Enter MySQL password: ")
-
     # Establish connection with MySQL and init cursor
-    db = mysql_connect(fleet[0], pw)
+    db = mysql_connect(fleet[0])
     mycursor = db.cursor()
 
     # Create SQLAlchemy engine to connect to MySQL Database
@@ -263,7 +258,7 @@ def calculate_stats(fleet):
     """ Calculate various stats related to the aircraft's history"""
 
     # Establish connection with MySQL:
-    db = mysql_connect(fleet[0], getpass("Enter MySQL password: "))
+    db = mysql_connect(fleet[0])
 
     def dist_travelled():
         """
@@ -426,6 +421,8 @@ def main():
     local_area_map(fleet)
     pass
 
+# Make pw a global variable so it can be accessed by all the various database calls
+pw = getpass(" Enter MySQL password:")
 
 if __name__ == "__main__":
     sys.exit(main())
