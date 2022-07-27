@@ -17,6 +17,7 @@ from shapely.geometry import Point
 import geopandas as gpd
 from geopandas import GeoDataFrame
 import matplotlib.pyplot as plt
+import time
 
 
 def mysql_connect(aircraft):
@@ -26,8 +27,6 @@ def mysql_connect(aircraft):
     :type aircraft: str
     :return: mysql.connector.connect() is pass, Exception if fail
     """
-    # TODO FIGURE OUT A WAY TO VERIFY IF A CONNECTION HAS ALREADY BEEN ESTABLISHED, SO IT IS NOT NEEDED TO ENTER THE
-    #  PW MULTIPLE TIMES
     try:
         # Init connection to MySQL database
         db = mysql.connector.connect(
@@ -62,6 +61,31 @@ def between_parentheses(s):
                     res.append(s[i + j])
 
 
+def convert24(str1):
+    """
+    Convert from 12-hour to 24-hour format
+    :param str1: 12-hour time string with AM/PM suffix
+    :return: 24-hour format (HH:MM:SS)
+    :rtype: str
+    """
+    # Checking if last two elements of time
+    # is AM and first two elements are 12
+    if str1[-2:] == "AM" and str1[:2] == "12":
+        return "00" + str1[2:-2]
+
+    # remove the AM
+    elif str1[-2:] == "AM":
+        return str1[:-2]
+
+    # Checking if last two elements of time
+    # is PM and first two elements are 12
+    elif str1[-2:] == "PM" and str1[:2] == "12":
+        return str1[:-2]
+    else:
+        # add 12 to hours and remove PM
+        return str(int(str1[:2]) + 12) + str1[2:8]
+
+
 def flightaware_history(aircraft):
     """
     Grab the aircraft history from flight aware and return pandas dataframe.
@@ -93,7 +117,7 @@ def flightaware_history(aircraft):
             sys.exit(e)
 
         # Define of the dataframe
-        df = pd.DataFrame(columns=["Date", "Route", "Url"])
+        df = pd.DataFrame(columns=["date", "route", "dept_time", "url"])
 
         # Scrape data
         rows = table.find_all("tr")
@@ -111,67 +135,50 @@ def flightaware_history(aircraft):
             [6] Total time
             """
             columns = row.find_all("td")
-            date = columns[0].text
-            # If the airport is unknown it is listed as "Near" and no airport code given.
-            # In these cases, replace the airport code with "UNKW" for unknown
-            if "Near" in columns[2].text:
-                origin = "UNKW"
-            else:
-                origin = between_parentheses(columns[2].text)
-            if "Near" in columns[3].text:
-                destination = "UNKW"
-            else:
-                destination = between_parentheses(columns[3].text)
+            date = columns[0].text.strip()
+            try:
+                # If the airport is unknown it is listed as "Near" and no airport code given.
+                # In these cases, replace the airport code with "UNKW" for unknown
+                if "Near" in columns[2].text:
+                    origin = "UNKW"
+                else:
+                    origin = between_parentheses(columns[2].text)
+                if "Near" in columns[3].text:
+                    destination = "UNKW"
+                else:
+                    destination = between_parentheses(columns[3].text)
+                route = origin + "-" + destination
+            except Exception as e:
+                print(f" Something went wrong while getting the plane history: {e}")
+                print(" Attempting to continue...")
+                continue
 
-            route = origin + "-" + destination
+            dept_time = convert24(columns[4].text)
 
+            # Convert strings into a format that will allow them to be used as table names
+            date = date.replace("-", "_")
+            route = route.replace("-", "_")
+            dept_time = dept_time.replace(":", "_")
             # build a row to be exported to pandas
-            out = [date, route, url]
+            out = [date, route, dept_time[:-3:], url]
 
-            # build pandas. Len == 3 ensures all data has been collected
-            if len(out) == 3:
-                df.loc[len(df)] = out
-        print(df)
+            # build pandas
+            df.loc[len(df)] = out
         return df
 
     except Exception as e:
-        print(f" Failed to extract flight history!")
+        print(f" Failed to extract flight history! (flightaware_history)")
         print(f" error: {e}")
-        sys.exit()        
-  
+        sys.exit()
+
 
 def flightaware_getter():
     """
     Web scraping to grab data from flight aware and save to file.
     :return: Panda dataframe containing list[time, lat, long, kts, altitude]
     """
-    def convert24(str1):
-        """
-        Convert from 12-hour to 24-hour format
-        :param str1: 12-hour time string with AM/PM suffix
-        :return: 24-hour format (HH:MM:SS)
-        :rtype: str
-        """
-        # Checking if last two elements of time
-        # is AM and first two elements are 12
-        if str1[-2:] == "AM" and str1[:2] == "12":
-            return "00" + str1[2:-2]
-
-        # remove the AM
-        elif str1[-2:] == "AM":
-            return str1[:-2]
-
-        # Checking if last two elements of time
-        # is PM and first two elements are 12
-        elif str1[-2:] == "PM" and str1[:2] == "12":
-            return str1[:-2]
-        else:
-            # add 12 to hours and remove PM
-            return str(int(str1[:2]) + 12) + str1[2:8]
 
     # Make a GET request to flightaware
-    # TODO CREATE A WAY TO GET THE URL FOR NEW FLIGHT LEGS
-    # TODO TAKE IN AIRCRAFT ID, CHECK PAGE, CHECK IF ANY NEW FLIGHTS. IF YES, CONTINUE, ELSE EXIT
     url = "https://flightaware.com/live/flight/N81673/history/20220717/1522Z/KEZS/KMIW/tracklog"
     r = requests.get(url)
     # Check the status code
@@ -188,25 +195,12 @@ def flightaware_getter():
     try:
         head = soup.find("head")
         title = head.find("title").text
-        print(title)
-        title = list(title)
-        leg = []
         # Extracting from: Flight Track Log ✈ N81673 22-Jul-2022 (MO3-KOJC) - FlightAware
         # leg information is between the parenthesis, below code extracts and saves as separate objects
-        for i in range(len(title)):
-            if title[i] == "(":
-                i = i + 1
-                for j in range(len(title) - i):
-                    if title[i + j] == ")":
-                        print(leg)
-                        break
-                    else:
-                        leg.append(title[i + j])
-        leg = "".join(leg)
-        splitter = leg.split("-")
+        between_parentheses(title)
+        splitter = title.split("-")
         dep_airport = splitter[0]
         dest_airport = splitter[1]
-        print(f" departure airport: {dep_airport}, destination airport: {dest_airport}")
         # TODO ADD RETURN
     except Exception as e:
         print(f" Failed to extract departure and destination airports!")
@@ -215,7 +209,7 @@ def flightaware_getter():
     # ------------------------------------------------------------------------------------------------------------------
     #   Extract table data
     # ------------------------------------------------------------------------------------------------------------------
-    # Look for table "prettyTable"
+    # Look for table "prettyTable fullWidth"
     try:
         table = soup.find("table", class_="prettyTable fullWidth")
     except Exception as e:
@@ -223,7 +217,7 @@ def flightaware_getter():
         sys.exit(e)
 
     # Defining of the dataframe
-    df = pd.DataFrame(columns=["Time", "Latitude", "Longitude", "Knots", "Altitude"])
+    df = pd.DataFrame(columns=["time", "latitude", "longitude", "knots", "altitude"])
 
     # Scrape data
     rows = table.find_all("tr")
@@ -274,27 +268,30 @@ def db_data_saver(fleet):
     :param fleet: list of club aircraft
     """
 
-    # Get pandas dataframe
-    df = flightaware_getter()
+    # Get pandas dataframe for PLANE HISTORY
+    hist_df = flightaware_history(fleet[0])
+    print(f" Waiting 5 seconds...")
+    time.sleep(5)
+    # Get pandas dataframe for FLIGHT DETAILS
+    details_df = flightaware_getter()
 
     # Establish connection with MySQL and initialize the cursor
     db = mysql_connect(fleet[0])
     mycursor = db.cursor()
 
     # Delete a table
-    mycursor.execute("DROP TABLE Flight")
-
-    # Create a table
-    mycursor.execute("CREATE TABLE IF NOT EXISTS flight("
-                     "Time TIME, "
-                     "Latitude FLOAT, "
-                     "Longitude FLOAT, "
-                     "Knots MEDIUMINT(5), "
-                     "Altitude MEDIUMINT(5))")
+    # USED ONLY DURING TESTING TO AVOID BUILD-UP OF DATA
+    mycursor.execute("DROP TABLE flight_history")
 
     # Delete a table
-    # mycursor.execute("DROP TABLE Flight")
+    # mycursor.execute("DROP TABLE flight")
 
+    # Create flight history PARENT table
+    mycursor.execute("CREATE TABLE IF NOT EXISTS flight_history("
+                     "date VARCHAR(15), "
+                     "route VARCHAR(15), "
+                     "dept_time VARCHAR(15), "
+                     "url VARCHAR(100))")
 
     # Create SQLAlchemy engine to connect to MySQL Database
     user = "root"
@@ -307,14 +304,42 @@ def db_data_saver(fleet):
         'mysql+mysqlconnector://' + user + ':' + passwd + '@' + host_ip + ':' + port + '/' + database,
         echo=False)
 
-    # Convert dataframe to sql table
-    df.to_sql('flight', engine, if_exists="append", index=False)
+    try:
+        # Convert dataframe to sql table (FLIGHT HISTORY)  # TODO FIND WAY TO ONLY REPLACE IF NOT EXISTS
+        hist_df.to_sql('flight_history', engine, if_exists="append", index=False)
+    except Exception as e:
+        print(" An error occured with the SQLAclhemy engine! (FLIGHT HISTORY)")
+        print(f" Error: {e}")
+        sys.exit()
 
-    # # Print all from table Flight
-    mycursor.execute("SELECT * FROM Flight")
+    mycursor.execute("SELECT * FROM flight_history")
+    hist = []
     for x in mycursor:
-        print(x)
+        hour = x[2]
+        hour = hour[0:2:]
+        hist.append(x[0] + "__" + x[1] + "__" + hour)
 
+    for name in hist:
+        name = name.lower()
+        try:
+            # Create a flight details CHILD table
+            mycursor.execute(f"CREATE TABLE IF NOT EXISTS {name}("
+                             "time TIME, "
+                             "latitude FLOAT, "
+                             "longitude FLOAT, "
+                             "knots MEDIUMINT(5), "
+                             "altitude MEDIUMINT(5))")
+        except Exception as e:
+            print(e)
+            continue
+
+        try:
+            # Convert dataframe to sql table (flight details)
+            details_df.to_sql(name, engine, if_exists="fail", index=False)
+        except Exception as e:
+            print(f" An error occured with the SQLAclhemy engine! {name}")
+            print(f" Error: {e}")
+            continue
     db.close()
 
 
@@ -323,7 +348,6 @@ def db_data_getter(fleet):
     Import the data from MySQL and convert into pandas dataframe
     :return: pandas dataframe
     """
-
     # Establish connection with MySQL and init cursor
     db = mysql_connect(fleet[0])
     mycursor = db.cursor()
@@ -344,6 +368,7 @@ def db_data_getter(fleet):
         res_df = pd.read_sql(query, engine)
     except Exception as e:
         db.close()
+        print(" An error occured with the SQLAclhemy engine!")
         print(str(e))
         sys.exit()
 
@@ -353,7 +378,6 @@ def db_data_getter(fleet):
 
 def calculate_stats(fleet):
     """ Calculate various stats related to the aircraft's history"""
-
     # Establish connection with MySQL:
     db = mysql_connect(fleet[0])
 
@@ -363,7 +387,6 @@ def calculate_stats(fleet):
         :return: Total distance travelled in miles
         :rtype: float(2)
         """
-
         def lat_long_dist(lat1, lat2, lon1, lon2):
             """
             Calculate the distance between 2 sets of lat/long coordinates using the Haversine formula
@@ -478,18 +501,17 @@ def state_plotter(states, us_map=True):
             usa[usa.STATE_ABBR == f"{n}"].plot(ax=ax, edgecolor="y", linewidth=2)
     return ax
 
+
 def local_area_map(fleet):
     """Use the lat/long data to plot a composite map of the KC area"""
-
     df = db_data_getter(fleet)
 
     # grab the latitude and longitude data from the panda dataframe
     geometry = [Point(xy) for xy in zip(df["Longitude"], df["Latitude"])]
     gdf = GeoDataFrame(df, geometry=geometry)
 
-
     ax = state_plotter(["WI", "IA", "MN"], us_map=False)
-    gdf.plot(ax=ax, color="red")
+    gdf.plot(ax=ax, color="red", markersize=10)
     plt.show()
     pass
 
@@ -512,14 +534,16 @@ def main():
         "N4803P"  # Debonair
     ]
     # flightaware_getter()  # DOES NOT NEED TO BE CALLED HERE, FOR TEST PURPOSES ONLY
+    # flightaware_history("N81673")
     db_data_saver(fleet)
-    db_data_getter(fleet)
-    calculate_stats(fleet)
-    local_area_map(fleet)
+    # db_data_getter(fleet)
+    # calculate_stats(fleet)
+    # local_area_map(fleet)
     pass
 
 # Make pw a global variable so it can be accessed by all the various database calls
 pw = getpass(" Enter MySQL password:")
+
 
 if __name__ == "__main__":
     sys.exit(main())
