@@ -216,9 +216,6 @@ def flightaware_getter():
         print(f" Error finding table on FlightAware!")
         sys.exit(e)
 
-    # Defining of the dataframe
-    df = pd.DataFrame(columns=["time", "latitude", "longitude", "knots", "altitude"])
-
     # Scrape data
     rows = table.find_all("tr")
     # reject the first two rows, these are headers
@@ -256,6 +253,10 @@ def flightaware_getter():
             else:
                 continue
             builder = [time, latitude, longitude, kts, altitude]
+
+        # Defining of the dataframe
+        df = pd.DataFrame(columns=["time", "latitude", "longitude", "knots", "altitude"])
+
         # Sometimes an empty list is generated due to scraping, reject these.
         if len(builder) == 5:
             df.loc[len(df)] = builder
@@ -281,7 +282,7 @@ def db_data_saver(fleet):
 
     # Delete a table
     # USED ONLY DURING TESTING TO AVOID BUILD-UP OF DATA
-    mycursor.execute("DROP TABLE flight_history")
+    # mycursor.execute("DROP TABLE flight_history")
 
     # Delete a table
     # mycursor.execute("DROP TABLE flight")
@@ -364,16 +365,32 @@ def db_data_getter(fleet):
         echo=False)
 
     try:
-        query = "SELECT * FROM flight"
-        res_df = pd.read_sql(query, engine)
+        mycursor.execute("SELECT * FROM flight_history")
+        hist = []
+        for x in mycursor:
+            hour = x[2]
+            hour = hour[0:2:]
+            hist.append(x[0] + "__" + x[1] + "__" + hour)
     except Exception as e:
         db.close()
         print(" An error occured with the SQLAclhemy engine!")
         print(str(e))
         sys.exit()
 
-    db.close()
-    return res_df
+    # Defining of the dataframe
+    total_df = pd.DataFrame()
+
+    try:
+        for leg in hist:
+            query = f"SELECT * FROM {leg}"
+            res_df = pd.read_sql(query, engine)
+            if res_df.empty:
+                continue
+            total_df = pd.concat([total_df, res_df],ignore_index=True)
+    except Exception as e:
+        print(f" {leg} not found! Attempting to continue...")
+
+    return total_df
 
 
 def calculate_stats(fleet):
@@ -507,11 +524,10 @@ def local_area_map(fleet):
     df = db_data_getter(fleet)
 
     # grab the latitude and longitude data from the panda dataframe
-    geometry = [Point(xy) for xy in zip(df["Longitude"], df["Latitude"])]
+    geometry = [Point(xy) for xy in zip(df["longitude"], df["latitude"])]
     gdf = GeoDataFrame(df, geometry=geometry)
-
-    ax = state_plotter(["WI", "IA", "MN"], us_map=False)
-    gdf.plot(ax=ax, color="red", markersize=10)
+    ax = state_plotter(["WI", "IA", "MN", "MO", "KS", "NE", "IL"], us_map=True)
+    gdf.plot(ax=ax, color="red", markersize=5)
     plt.show()
     pass
 
@@ -534,11 +550,11 @@ def main():
         "N4803P"  # Debonair
     ]
     # flightaware_getter()  # DOES NOT NEED TO BE CALLED HERE, FOR TEST PURPOSES ONLY
-    # flightaware_history("N81673")
-    db_data_saver(fleet)
+    # flightaware_history("N81673")  #  DOES NOT NEED TO BE CALLED HERE, FOR TEST PURPOSES ONLY
+    # db_data_saver(fleet)
     # db_data_getter(fleet)
     # calculate_stats(fleet)
-    # local_area_map(fleet)
+    local_area_map(fleet)
     pass
 
 # Make pw a global variable so it can be accessed by all the various database calls
