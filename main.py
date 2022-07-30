@@ -172,14 +172,15 @@ def flightaware_history(aircraft):
         sys.exit()
 
 
-def flightaware_getter():
+def flightaware_getter(url):
     """
     Web scraping to grab data from flight aware and save to file.
     :return: Panda dataframe containing list[time, lat, long, kts, altitude]
     """
 
     # Make a GET request to flightaware
-    url = "https://flightaware.com/live/flight/N81673/history/20220717/1522Z/KEZS/KMIW/tracklog"
+    url = "https://flightaware.com"+f"{url}"+"/tracklog"
+    print(url)
     r = requests.get(url)
     # Check the status code
     if r.status_code != 200:
@@ -212,9 +213,14 @@ def flightaware_getter():
     # Look for table "prettyTable fullWidth"
     try:
         table = soup.find("table", class_="prettyTable fullWidth")
+        if table is None:
+            raise Exception(f" Table class not found! {url}")
     except Exception as e:
         print(f" Error finding table on FlightAware!")
         sys.exit(e)
+
+    # Defining of the dataframe
+    df = pd.DataFrame(columns=["time", "latitude", "longitude", "knots", "altitude"])
 
     # Scrape data
     rows = table.find_all("tr")
@@ -254,9 +260,6 @@ def flightaware_getter():
                 continue
             builder = [time, latitude, longitude, kts, altitude]
 
-        # Defining of the dataframe
-        df = pd.DataFrame(columns=["time", "latitude", "longitude", "knots", "altitude"])
-
         # Sometimes an empty list is generated due to scraping, reject these.
         if len(builder) == 5:
             df.loc[len(df)] = builder
@@ -271,17 +274,13 @@ def db_data_saver(fleet):
 
     # Get pandas dataframe for PLANE HISTORY
     hist_df = flightaware_history(fleet[0])
-    print(f" Waiting 5 seconds...")
-    time.sleep(5)
-    # Get pandas dataframe for FLIGHT DETAILS
-    details_df = flightaware_getter()
 
     # Establish connection with MySQL and initialize the cursor
     db = mysql_connect(fleet[0])
     mycursor = db.cursor()
 
     # Delete a table
-    # USED ONLY DURING TESTING TO AVOID BUILD-UP OF DATA
+    # USED ONLY DURING TESTING TO AVOID BUILD-UP OF DATA  # TODO DELETE
     # mycursor.execute("DROP TABLE flight_history")
 
     # Delete a table
@@ -307,12 +306,13 @@ def db_data_saver(fleet):
 
     try:
         # Convert dataframe to sql table (FLIGHT HISTORY)  # TODO FIND WAY TO ONLY REPLACE IF NOT EXISTS
-        hist_df.to_sql('flight_history', engine, if_exists="append", index=False)
+        hist_df.to_sql('flight_history', engine, if_exists="replace", index=False)
     except Exception as e:
         print(" An error occured with the SQLAclhemy engine! (FLIGHT HISTORY)")
         print(f" Error: {e}")
         sys.exit()
 
+    # Create individual flight history tables
     mycursor.execute("SELECT * FROM flight_history")
     hist = []
     for x in mycursor:
@@ -334,13 +334,41 @@ def db_data_saver(fleet):
             print(e)
             continue
 
+    try:
+        mycursor.execute("SELECT * FROM flight_history")
+        url_list = []
+        for x in mycursor:
+            url_list.append(x[3])
+
+        mycursor.execute("SELECT * FROM flight_history")
+        name = []
+        for x in mycursor:
+            hour = x[2]
+            hour = hour[0:2:]
+            name.append(x[0] + "__" + x[1] + "__" + hour)
+    except Exception as e:
+        db.close()
+        print(" An error occured with the SQLAclhemy engine! (build url list)")
+        print(str(e))
+        sys.exit()
+
+    if len(url_list) != len(name):
+        sys.exit(f" length of names and length of url_list are not the same!")
+
+    # try to get specific history data from each url page
+    for i in range(len(url_list)):
         try:
+            details_df = flightaware_getter(url_list[i])
             # Convert dataframe to sql table (flight details)
-            details_df.to_sql(name, engine, if_exists="fail", index=False)
+            details_df.to_sql(name[i].lower(), engine, if_exists="replace", index=False)
+            print(f" Apparent success? {i} out of {len(url_list)}")
+            print(" Waiting 3 seconds...")
+            time.sleep(3)
         except Exception as e:
-            print(f" An error occured with the SQLAclhemy engine! {name}")
+            print(f" An error occured with the SQLAclhemy engine! (URL BUILDER)")
             print(f" Error: {e}")
-            continue
+            print(" Waiting 3 seconds...")
+            time.sleep(3)
     db.close()
 
 
@@ -523,10 +551,13 @@ def local_area_map(fleet):
     """Use the lat/long data to plot a composite map of the KC area"""
     df = db_data_getter(fleet)
 
+    df["longitude"] = df["longitude"].astype(float)
+    df["latitude"] = df["latitude"].astype(float)
+
     # grab the latitude and longitude data from the panda dataframe
     geometry = [Point(xy) for xy in zip(df["longitude"], df["latitude"])]
     gdf = GeoDataFrame(df, geometry=geometry)
-    ax = state_plotter(["WI", "IA", "MN", "MO", "KS", "NE", "IL"], us_map=True)
+    ax = state_plotter(["WI", "IA", "MN", "MO", "KS", "NE", "IL"], us_map=False)
     gdf.plot(ax=ax, color="red", markersize=5)
     plt.show()
     pass
@@ -551,8 +582,8 @@ def main():
     ]
     # flightaware_getter()  # DOES NOT NEED TO BE CALLED HERE, FOR TEST PURPOSES ONLY
     # flightaware_history("N81673")  #  DOES NOT NEED TO BE CALLED HERE, FOR TEST PURPOSES ONLY
-    # db_data_saver(fleet)
-    # db_data_getter(fleet)
+    db_data_saver(fleet)
+    # db_data_getter(fleet)  # DOES NOT NEED TO BE CALLED HERE, FOR TEST PURPOSES ONLY
     # calculate_stats(fleet)
     local_area_map(fleet)
     pass
