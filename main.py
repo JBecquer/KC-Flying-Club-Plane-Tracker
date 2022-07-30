@@ -18,6 +18,22 @@ import geopandas as gpd
 from geopandas import GeoDataFrame
 import matplotlib.pyplot as plt
 import time
+import logging
+
+
+# create logger (copied from https://docs.python.org/3/howto/logging.html#logging-advanced-tutorial)
+logger = logging.getLogger('Main')
+logger.setLevel(logging.DEBUG)
+
+# create console handler and set level to debug
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+# create formatter
+formatter = logging.Formatter('%(levelname)s - %(message)s')
+# add formatter to ch
+ch.setFormatter(formatter)
+# add ch to logger
+logger.addHandler(ch)
 
 
 def mysql_connect(aircraft):
@@ -35,11 +51,11 @@ def mysql_connect(aircraft):
             passwd=pw,
             database=aircraft
         )
-        print(f" Database connection to {aircraft} successful.")
+        logger.info(f" Database connection to {aircraft} successful.")
         return db
-    except Exception as x:
-        print(f" Database connection failed!")
-        sys.exit(x)
+    except Exception as e:
+        logger.critical(f" {aircraft} database connection failed! (mysql_connect)")
+        sys.exit(e)
 
         
 def between_parentheses(s):
@@ -91,15 +107,16 @@ def flightaware_history(aircraft):
     Grab the aircraft history from flight aware and return pandas dataframe.
     :param aircraft: aircraft ID. ex: N182WK
     :type aircraft: str
-    :return: pandas df = [date, route, URL]
+    :return: pandas df = [date, route, dept_time, URL]
     """
     # Make a GET request to flightaware
     url = f"https://flightaware.com/live/flight/{aircraft}/history"
+    logger.info(f" Getting plane history from: {url}")
     r = requests.get(url)
     # Check the status code
     if r.status_code != 200:
-        print(f" Failed to connect to FlightAware!")
-        print(f" status code: {r.status_code}")
+        logger.critical(f" Failed to connect to FlightAware! URL: {url}")
+        logger.critical(f" Status code: {r.status_code}")
         sys.exit()
 
     # Parse the HTML
@@ -113,7 +130,7 @@ def flightaware_history(aircraft):
         try:
             table = soup.find("table", class_="prettyTable fullWidth tablesaw tablesaw-stack")
         except Exception as e:
-            print(f" Error finding aircraft history table on FlightAware!")
+            logger.critical(f" Error finding aircraft history table on FlightAware! (flightaware_history)")
             sys.exit(e)
 
         # Define of the dataframe
@@ -149,8 +166,8 @@ def flightaware_history(aircraft):
                     destination = between_parentheses(columns[3].text)
                 route = origin + "-" + destination
             except Exception as e:
-                print(f" Something went wrong while getting the plane history: {e}")
-                print(" Attempting to continue...")
+                logger.warning(f" Something went wrong while getting the plane history: {e}")
+                logger.warning(" Attempting to continue...")
                 continue
 
             dept_time = convert24(columns[4].text)
@@ -161,15 +178,15 @@ def flightaware_history(aircraft):
             dept_time = dept_time.replace(":", "_")
             # build a row to be exported to pandas
             out = [date, route, dept_time[:-3:], url]
-
             # build pandas
             df.loc[len(df)] = out
+        logger.info(f" {aircraft} history saved successfully!")
         return df
 
     except Exception as e:
-        print(f" Failed to extract flight history! (flightaware_history)")
-        print(f" error: {e}")
-        sys.exit()
+        logger.critical(f" Failed to extract flight history! (flightaware_history)")
+        logger.critical(f" error: {e}")
+        sys.exit(e)
 
 
 def flightaware_getter(url):
@@ -180,33 +197,16 @@ def flightaware_getter(url):
 
     # Make a GET request to flightaware
     url = "https://flightaware.com"+f"{url}"+"/tracklog"
-    print(url)
+    logger.info(f" URL: {url}")
     r = requests.get(url)
     # Check the status code
     if r.status_code != 200:
-        print(f" Failed to connect to FlightAware!")
-        print(f" status code: {r.status_code}")
-        sys.exit()
+        logger.critical(f" Failed to connect to FlightAware! (flightaware_getter)")
+        logger.critical(f" status code: {r.status_code}")
+        sys.exit(r.status_code)
 
     # Parse the HTML
     soup = BeautifulSoup(r.text, "html.parser")
-    # ------------------------------------------------------------------------------------------------------------------
-    #   Extract flight leg information
-    # ------------------------------------------------------------------------------------------------------------------
-    try:
-        head = soup.find("head")
-        title = head.find("title").text
-        # Extracting from: Flight Track Log ✈ N81673 22-Jul-2022 (MO3-KOJC) - FlightAware
-        # leg information is between the parenthesis, below code extracts and saves as separate objects
-        between_parentheses(title)
-        splitter = title.split("-")
-        dep_airport = splitter[0]
-        dest_airport = splitter[1]
-        # TODO ADD RETURN
-    except Exception as e:
-        print(f" Failed to extract departure and destination airports!")
-        print(f" error: {e}")
-        sys.exit()
     # ------------------------------------------------------------------------------------------------------------------
     #   Extract table data
     # ------------------------------------------------------------------------------------------------------------------
@@ -214,9 +214,9 @@ def flightaware_getter(url):
     try:
         table = soup.find("table", class_="prettyTable fullWidth")
         if table is None:
-            raise Exception(f" Table class not found! {url}")
+            raise Exception(f" Table class \"prettyTable fullWidth\" not found! {url}")
     except Exception as e:
-        print(f" Error finding table on FlightAware!")
+        logger.critical(f" Error finding table on FlightAware! (flightaware_getter)")
         sys.exit(e)
 
     # Defining of the dataframe
@@ -258,7 +258,7 @@ def flightaware_getter(url):
                 kts = kts_columns[0].text.strip()
             else:
                 continue
-            builder = [time, latitude, longitude, kts, altitude]
+            builder = [time, latitude, longitude, kts, altitude]  # TODO MAKE THESE FLOATS AND INTS
 
         # Sometimes an empty list is generated due to scraping, reject these.
         if len(builder) == 5:
@@ -273,10 +273,10 @@ def db_data_saver(fleet):
     """
 
     # Get pandas dataframe for PLANE HISTORY
-    hist_df = flightaware_history(fleet[0])
+    hist_df = flightaware_history(fleet[1])
 
     # Establish connection with MySQL and initialize the cursor
-    db = mysql_connect(fleet[0])
+    db = mysql_connect(fleet[1])
     mycursor = db.cursor()
 
     # Delete a table
@@ -296,7 +296,7 @@ def db_data_saver(fleet):
     # Create SQLAlchemy engine to connect to MySQL Database
     user = "root"
     passwd = pw
-    database = "N81673"
+    database = fleet[1]  # TODO NEED TO UPDATE THIS TO SELECT THE CURRENT AC
     host_ip = '127.0.0.1'
     port = "3306"
 
@@ -308,9 +308,9 @@ def db_data_saver(fleet):
         # Convert dataframe to sql table (FLIGHT HISTORY)  # TODO FIND WAY TO ONLY REPLACE IF NOT EXISTS
         hist_df.to_sql('flight_history', engine, if_exists="replace", index=False)
     except Exception as e:
-        print(" An error occured with the SQLAclhemy engine! (FLIGHT HISTORY)")
-        print(f" Error: {e}")
-        sys.exit()
+        logger.critical(" An error occured with the SQLAclhemy engine! (db_data_saver)")
+        logger.critical(f" Error: {e}")
+        sys.exit(e)
 
     # Create individual flight history tables
     mycursor.execute("SELECT * FROM flight_history")
@@ -331,7 +331,8 @@ def db_data_saver(fleet):
                              "knots MEDIUMINT(5), "
                              "altitude MEDIUMINT(5))")
         except Exception as e:
-            print(e)
+            logger.warning(f" Database table {name} already exists!")
+            logger.warning(f" Attempting to continue...")
             continue
 
     try:
@@ -348,27 +349,31 @@ def db_data_saver(fleet):
             name.append(x[0] + "__" + x[1] + "__" + hour)
     except Exception as e:
         db.close()
-        print(" An error occured with the SQLAclhemy engine! (build url list)")
-        print(str(e))
-        sys.exit()
+        logger.critical(" An error occurred while trying to build the URL list! (db_data_saver)")
+        logger.critical(e)
+        sys.exit(e)
 
     if len(url_list) != len(name):
+        logger.critical(f" length of names and length of url_list are not the same!")
         sys.exit(f" length of names and length of url_list are not the same!")
 
     # try to get specific history data from each url page
+    logger.info(" Attempting to get flight details...")
     for i in range(len(url_list)):
         try:
             details_df = flightaware_getter(url_list[i])
             # Convert dataframe to sql table (flight details)
             details_df.to_sql(name[i].lower(), engine, if_exists="replace", index=False)
-            print(f" Apparent success? {i} out of {len(url_list)}")
-            print(" Waiting 3 seconds...")
-            time.sleep(3)
+            logger.info(f" {i+1} out of {len(url_list)} completed!")
+            if i != len(url_list)-1:
+                logger.info(" Waiting 3 seconds...")
+                time.sleep(3)
         except Exception as e:
-            print(f" An error occured with the SQLAclhemy engine! (URL BUILDER)")
-            print(f" Error: {e}")
-            print(" Waiting 3 seconds...")
+            logger.warning(f" An error occurred while trying to populate the flight data tables! (db_data_saver)")
+            logger.warning(f" Error: {e}")
+            logger.warning(" Waiting 3 seconds...")
             time.sleep(3)
+    logger.info(f" Tables built successfully!")
     db.close()
 
 
@@ -378,13 +383,13 @@ def db_data_getter(fleet):
     :return: pandas dataframe
     """
     # Establish connection with MySQL and init cursor
-    db = mysql_connect(fleet[0])
+    db = mysql_connect(fleet[1])
     mycursor = db.cursor()
 
     # Create SQLAlchemy engine to connect to MySQL Database
     user = "root"
     passwd = pw
-    database = "N81673"
+    database = fleet[1]
     host_ip = '127.0.0.1'
     port = "3306"
 
@@ -401,9 +406,9 @@ def db_data_getter(fleet):
             hist.append(x[0] + "__" + x[1] + "__" + hour)
     except Exception as e:
         db.close()
-        print(" An error occured with the SQLAclhemy engine!")
-        print(str(e))
-        sys.exit()
+        logger.critical(" An error occurred while grabbing the flight history table names! (db_data_getter)")
+        logger.critical(e)
+        sys.exit(e)
 
     # Defining of the dataframe
     total_df = pd.DataFrame()
@@ -414,9 +419,9 @@ def db_data_getter(fleet):
             res_df = pd.read_sql(query, engine)
             if res_df.empty:
                 continue
-            total_df = pd.concat([total_df, res_df],ignore_index=True)
+            total_df = pd.concat([total_df, res_df], ignore_index=True)
     except Exception as e:
-        print(f" {leg} not found! Attempting to continue...")
+        logger.warning(f" {leg} not found! Attempting to continue...")
 
     return total_df
 
@@ -557,7 +562,7 @@ def local_area_map(fleet):
     # grab the latitude and longitude data from the panda dataframe
     geometry = [Point(xy) for xy in zip(df["longitude"], df["latitude"])]
     gdf = GeoDataFrame(df, geometry=geometry)
-    ax = state_plotter(["WI", "IA", "MN", "MO", "KS", "NE", "IL"], us_map=False)
+    ax = state_plotter(["MO", "KS"], us_map=False)
     gdf.plot(ax=ax, color="red", markersize=5)
     plt.show()
     pass
@@ -586,11 +591,10 @@ def main():
     # db_data_getter(fleet)  # DOES NOT NEED TO BE CALLED HERE, FOR TEST PURPOSES ONLY
     # calculate_stats(fleet)
     local_area_map(fleet)
-    pass
+    logging.info(" Code complete.")
 
 # Make pw a global variable so it can be accessed by all the various database calls
 pw = getpass(" Enter MySQL password:")
-
 
 if __name__ == "__main__":
     sys.exit(main())
