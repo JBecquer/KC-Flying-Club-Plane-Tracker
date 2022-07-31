@@ -109,10 +109,16 @@ def flightaware_history(aircraft):
     :type aircraft: str
     :return: pandas df = [date, route, dept_time, URL]
     """
+    headers = {
+        'User_Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36',
+        'Accept-Language': "en-US,en;q=0.9",
+        'Referer': "https://google.com",
+        "DNT": "1"
+    }
     # Make a GET request to flightaware
-    url = f"https://flightaware.com/live/flight/{aircraft}/history"
+    url = f"https://flightaware.com/live/flight/{aircraft}/history/80"
     logger.info(f" Getting plane history from: {url}")
-    r = requests.get(url)
+    r = requests.get(url, headers=headers)
     # Check the status code
     if r.status_code != 200:
         logger.critical(f" Failed to connect to FlightAware! URL: {url}")
@@ -186,7 +192,7 @@ def flightaware_history(aircraft):
     except Exception as e:
         logger.critical(f" Failed to extract flight history! (flightaware_history)")
         logger.critical(f" error: {e}")
-        sys.exit(e)
+        pass
 
 
 def flightaware_getter(url):
@@ -266,25 +272,18 @@ def flightaware_getter(url):
     return df
 
 
-def db_data_saver(fleet):
+def db_data_saver(aircraft):
     """
     Export the web scrapped panda dataframe into MySQL
-    :param fleet: list of club aircraft
+    :param aircraft: N# of club aircraft, used for MySQL Schema
     """
 
     # Get pandas dataframe for PLANE HISTORY
-    hist_df = flightaware_history(fleet[1])
+    hist_df = flightaware_history(aircraft)
 
     # Establish connection with MySQL and initialize the cursor
-    db = mysql_connect(fleet[1])
+    db = mysql_connect(aircraft)
     mycursor = db.cursor()
-
-    # Delete a table
-    # USED ONLY DURING TESTING TO AVOID BUILD-UP OF DATA  # TODO DELETE
-    # mycursor.execute("DROP TABLE flight_history")
-
-    # Delete a table
-    # mycursor.execute("DROP TABLE flight")
 
     # Create flight history PARENT table
     mycursor.execute("CREATE TABLE IF NOT EXISTS flight_history("
@@ -296,7 +295,7 @@ def db_data_saver(fleet):
     # Create SQLAlchemy engine to connect to MySQL Database
     user = "root"
     passwd = pw
-    database = fleet[1]  # TODO NEED TO UPDATE THIS TO SELECT THE CURRENT AC
+    database = aircraft
     host_ip = '127.0.0.1'
     port = "3306"
 
@@ -377,19 +376,19 @@ def db_data_saver(fleet):
     db.close()
 
 
-def db_data_getter(fleet):
+def db_data_getter(aircraft):
     """
     Import the data from MySQL and convert into pandas dataframe
     :return: pandas dataframe
     """
     # Establish connection with MySQL and init cursor
-    db = mysql_connect(fleet[1])
+    db = mysql_connect(aircraft)
     mycursor = db.cursor()
 
     # Create SQLAlchemy engine to connect to MySQL Database
     user = "root"
     passwd = pw
-    database = fleet[1]
+    database = aircraft
     host_ip = '127.0.0.1'
     port = "3306"
 
@@ -426,10 +425,10 @@ def db_data_getter(fleet):
     return total_df
 
 
-def calculate_stats(fleet):
+def calculate_stats(aircraft):
     """ Calculate various stats related to the aircraft's history"""
     # Establish connection with MySQL:
-    db = mysql_connect(fleet[0])
+    db = mysql_connect(aircraft)
 
     def dist_travelled():
         """
@@ -552,18 +551,50 @@ def state_plotter(states, us_map=True):
     return ax
 
 
-def local_area_map(fleet):
+def local_area_map():
     """Use the lat/long data to plot a composite map of the KC area"""
-    df = db_data_getter(fleet)
 
-    df["longitude"] = df["longitude"].astype(float)
-    df["latitude"] = df["latitude"].astype(float)
+    # TODO UPDATE ERROR CONDITIONS TO PASS OVER NO HISTORY DATA
+    #  (An error occured with the SQLAclhemy engine! (db_data_saver))
+
+    df_N81673 = db_data_getter("N81673")
+    df_N3892Q = db_data_getter("N3892Q")
+    df_N20389 = db_data_getter("N20389")
+    # df_N182WK = db_data_getter("N182WK")
+    # df_N58843 = db_data_getter("N58843")
+    df_N82145 = db_data_getter("N82145")
+    # df_N4803P = db_data_getter("N4803P")
 
     # grab the latitude and longitude data from the panda dataframe
-    geometry = [Point(xy) for xy in zip(df["longitude"], df["latitude"])]
-    gdf = GeoDataFrame(df, geometry=geometry)
-    ax = state_plotter(["MO", "KS"], us_map=False)
-    gdf.plot(ax=ax, color="red", markersize=5)
+    geom_N81673 = [Point(xy) for xy in zip(df_N81673["longitude"].astype(float), df_N81673["latitude"].astype(float))]
+    geom_N3892Q = [Point(xy) for xy in zip(df_N3892Q["longitude"].astype(float), df_N3892Q["latitude"].astype(float))]
+    geom_N20389 = [Point(xy) for xy in zip(df_N20389["longitude"].astype(float), df_N20389["latitude"].astype(float))]
+    # geom_N182WK = [Point(xy) for xy in zip(df_N182WK["longitude"].astype(float), df_N182WK["latitude"].astype(float))]
+    # geom_N58843 = [Point(xy) for xy in zip(df_N58843["longitude"].astype(float), df_N58843["latitude"].astype(float))]
+    geom_N82145 = [Point(xy) for xy in zip(df_N82145["longitude"].astype(float), df_N82145["latitude"].astype(float))]
+    # geom_N4803P = [Point(xy) for xy in zip(df_N4803P["longitude"].astype(float), df_N4803P["latitude"].astype(float))]
+
+    gdf_N81673 = GeoDataFrame(df_N81673, geometry=geom_N81673)
+    gdf_N3892Q = GeoDataFrame(df_N3892Q, geometry=geom_N3892Q)
+    gdf_N20389 = GeoDataFrame(df_N20389, geometry=geom_N20389)
+    # gdf_N182WK = GeoDataFrame(df_N182WK, geometry=geom_N182WK)
+    # gdf_N58843 = GeoDataFrame(df_N58843, geometry=geom_N58843)
+    gdf_N82145 = GeoDataFrame(df_N82145, geometry=geom_N82145)
+    # gdf_N4803P = GeoDataFrame(df_N4803P, geometry=geom_N4803P)
+
+    ax = state_plotter(["MO", "KS", "MN", "WI", "IL", "NE", "IA"], us_map=False)
+
+    gdf_N81673.plot(ax=ax, color="red", markersize=5)
+    gdf_N3892Q.plot(ax=ax, color="blue", markersize=5)
+    gdf_N20389.plot(ax=ax, color="green", markersize=5)
+    # gdf_N182WK.plot(ax=ax, color="cyan", markersize=5)
+    # gdf_N58843.plot(ax=ax, color="white", markersize=5)
+    gdf_N82145.plot(ax=ax, color="black", markersize=5)
+    # gdf_N4803P.plot(ax=ax, color="magenta", markersize=5)
+    plt.legend(['N81673 - Archer',
+                'N3892Q - C172',
+                'N20389 - C172',
+                'N82145 - Saratoga'])
     plt.show()
     pass
 
@@ -580,18 +611,22 @@ def main():
         "N81673",  # Archer
         "N3892Q",  # C172
         "N20389",  # C172
-        "N182WK",  # C182
-        "N58843",  # C182
+        # "N182WK",  # C182
+        # "N58843",  # C182
         "N82145",  # Saratoga
-        "N4803P"  # Debonair
+        "N4803P"  # Debonair  # TODO NEED TO TROUBLESHOOT THIS AIRCRAFT
     ]
     # flightaware_getter()  # DOES NOT NEED TO BE CALLED HERE, FOR TEST PURPOSES ONLY
     # flightaware_history("N81673")  #  DOES NOT NEED TO BE CALLED HERE, FOR TEST PURPOSES ONLY
-    db_data_saver(fleet)
-    # db_data_getter(fleet)  # DOES NOT NEED TO BE CALLED HERE, FOR TEST PURPOSES ONLY
-    # calculate_stats(fleet)
-    local_area_map(fleet)
+    # db_data_getter(aircraft)  # DOES NOT NEED TO BE CALLED HERE, FOR TEST PURPOSES ONLY
+    # calculate_stats(aircraft)  # TODO NEED TO SCRUB
+    # for aircraft in fleet[1:2]:
+    #     db_data_saver(aircraft)
+
+    local_area_map()
+
     logging.info(" Code complete.")
+
 
 # Make pw a global variable so it can be accessed by all the various database calls
 pw = getpass(" Enter MySQL password:")
