@@ -102,6 +102,45 @@ def convert24(str1):
         return str(int(str1[:2]) + 12) + str1[2:8]
 
 
+def convert_date(s):
+    """
+    Take a date format "DD-MMM-YYYY" where MMM is a 3-digit month code. Convert to YYYY-MM-DD for MySQL DATE format
+    ex: 17-JUL-2022 converts to 2022-07-17
+    :param s: input date string DD-MMM-YYYY "17-JUL-2022"
+    :return: output date string YYYY-MM-DD "2022-07-17"
+    """
+    if len(s) != 11:
+        logger.critical(f" The input string {s} is not the correct length! ({len(s)} != 11)")
+        sys.exit()
+
+    if s[3:6].lower() == "jan":
+        return s[7:] + "-01-" + s[0:2]
+    if s[3:6].lower() == "feb":
+        return s[7:] + "-02-" + s[0:2]
+    if s[3:6].lower() == "mar":
+        return s[7:] + "-03-" + s[0:2]
+    if s[3:6].lower() == "apr":
+        return s[7:] + "-04-" + s[0:2]
+    if s[3:6].lower() == "may":
+        return s[7:] + "-05-" + s[0:2]
+    if s[3:6].lower() == "jun":
+        return s[7:] + "-06-" + s[0:2]
+    if s[3:6].lower() == "jul":
+        return s[7:] + "-07-" + s[0:2]
+    if s[3:6].lower() == "aug":
+        return s[7:] + "-08-" + s[0:2]
+    if s[3:6].lower() == "sep":
+        return s[7:] + "-09-" + s[0:2]
+    if s[3:6].lower() == "oct":
+        return s[7:] + "-10-" + s[0:2]
+    if s[3:6].lower() == "nov":
+        return s[7:] + "-11-" + s[0:2]
+    if s[3:6].lower() == "dec":
+        return s[7:] + "-12-" + s[0:2]
+    else:
+        sys.exit(" Invalid date code! (convert_date)")
+
+
 def flightaware_history(aircraft):
     """
     Grab the aircraft history from flight aware and return pandas dataframe.
@@ -118,7 +157,7 @@ def flightaware_history(aircraft):
     # Make a GET request to flightaware
     url = f"https://flightaware.com/live/flight/{aircraft}/history/80"
     logger.info(f" Getting plane history from: {url}")
-    r = requests.get(url, headers=headers)
+    r = requests.get(url, headers=headers, timeout=5)
     # Check the status code
     if r.status_code != 200:
         logger.critical(f" Failed to connect to FlightAware! URL: {url}")
@@ -179,7 +218,7 @@ def flightaware_history(aircraft):
             dept_time = convert24(columns[4].text)
 
             # Convert strings into a format that will allow them to be used as table names
-            date = date.replace("-", "_")
+            date = convert_date(date)
             route = route.replace("-", "_")
             dept_time = dept_time.replace(":", "_")
             # build a row to be exported to pandas
@@ -204,7 +243,7 @@ def flightaware_getter(url):
     # Make a GET request to flightaware
     url = "https://flightaware.com"+f"{url}"+"/tracklog"
     logger.info(f" URL: {url}")
-    r = requests.get(url)
+    r = requests.get(url, timeout=5)
     # Check the status code
     if r.status_code != 200:
         logger.critical(f" Failed to connect to FlightAware! (flightaware_getter)")
@@ -287,7 +326,7 @@ def db_data_saver(aircraft):
 
     # Create flight history PARENT table
     mycursor.execute("CREATE TABLE IF NOT EXISTS flight_history("
-                     "date VARCHAR(15), "
+                     "date DATE, "
                      "route VARCHAR(15), "
                      "dept_time VARCHAR(15), "
                      "url VARCHAR(100))")
@@ -304,33 +343,44 @@ def db_data_saver(aircraft):
         echo=False)
 
     try:
-        # Convert dataframe to sql table (FLIGHT HISTORY)  # TODO FIND WAY TO ONLY REPLACE IF NOT EXISTS
-        hist_df.to_sql('flight_history', engine, if_exists="replace", index=False)
+        # Convert dataframe to sql table (FLIGHT HISTORY)
+        hist_df.to_sql('flight_history', engine, if_exists="append", index=False)
     except Exception as e:
-        logger.critical(" An error occured with the SQLAclhemy engine! (db_data_saver)")
+        logger.critical(" An error occurred with the SQLAclhemy engine! (db_data_saver)")
         logger.critical(f" Error: {e}")
         sys.exit(e)
+
+    # Delete duplicate data, since we are using if_exists="append" from above
+    # Reference: https://phoenixnap.com/kb/mysql-remove-duplicate-rows#ftoc-heading-8
+    mycursor.execute("CREATE TABLE IF NOT EXISTS flight_history_temp SELECT DISTINCT date, route, dept_time, url "
+                     "FROM flight_history")
+    mycursor.execute("DROP TABLE flight_history")
+    mycursor.execute("ALTER TABLE flight_history_temp RENAME TO flight_history")
 
     # Create individual flight history tables
     mycursor.execute("SELECT * FROM flight_history")
     hist = []
     for x in mycursor:
+        # convert DATE format to string with underscores to allow to be used as table name
+        date = str(x[0])
+        date = date.replace("-", "_")
         hour = x[2]
         hour = hour[0:2:]
-        hist.append(x[0] + "__" + x[1] + "__" + hour)
+        hist.append(date + "__" + x[1] + "__" + hour)
 
     for name in hist:
         name = name.lower()
         try:
             # Create a flight details CHILD table
-            mycursor.execute(f"CREATE TABLE IF NOT EXISTS {name}("
-                             "time TIME, "
+            mycursor.execute(f"CREATE TABLE IF NOT EXISTS {name} ("
+                             "time MEDIUMINT(10), "
                              "latitude FLOAT, "
                              "longitude FLOAT, "
                              "knots MEDIUMINT(5), "
                              "altitude MEDIUMINT(5))")
         except Exception as e:
-            logger.warning(f" Database table {name} already exists!")
+            logger.warning(f" Error while attempting to create table {name}")
+            logger.warning(e)
             logger.warning(f" Attempting to continue...")
             continue
 
@@ -343,17 +393,20 @@ def db_data_saver(aircraft):
         mycursor.execute("SELECT * FROM flight_history")
         name = []
         for x in mycursor:
+            # convert DATE format to string with underscores to allow to be used as table name
+            date = str(x[0])
+            date = date.replace("-", "_")
             hour = x[2]
             hour = hour[0:2:]
-            name.append(x[0] + "__" + x[1] + "__" + hour)
+            name.append(date + "__" + x[1] + "__" + hour)
     except Exception as e:
         db.close()
         logger.critical(" An error occurred while trying to build the URL list! (db_data_saver)")
         logger.critical(e)
-        sys.exit(e)
+        sys.exit()
 
     if len(url_list) != len(name):
-        logger.critical(f" length of names and length of url_list are not the same!")
+        logger.critical(f" Length of names and length of url_list are not the same!")
         sys.exit(f" length of names and length of url_list are not the same!")
 
     # try to get specific history data from each url page
@@ -400,9 +453,12 @@ def db_data_getter(aircraft):
         mycursor.execute("SELECT * FROM flight_history")
         hist = []
         for x in mycursor:
+            # convert DATE format to string with underscores to allow to be used as table name
+            date = str(x[0])
+            date = date.replace("-", "_")
             hour = x[2]
             hour = hour[0:2:]
-            hist.append(x[0] + "__" + x[1] + "__" + hour)
+            hist.append(date + "__" + x[1].lower() + "__" + hour)
     except Exception as e:
         db.close()
         logger.critical(" An error occurred while grabbing the flight history table names! (db_data_getter)")
@@ -420,7 +476,8 @@ def db_data_getter(aircraft):
                 continue
             total_df = pd.concat([total_df, res_df], ignore_index=True)
     except Exception as e:
-        logger.warning(f" {leg} not found! Attempting to continue...")
+        logger.warning(f" Error while grabbing {leg}: {e}")
+        logger.warning(f" Attempting to continue...")
 
     return total_df
 
@@ -614,14 +671,14 @@ def main():
         # "N182WK",  # C182
         # "N58843",  # C182
         "N82145",  # Saratoga
-        "N4803P"  # Debonair  # TODO NEED TO TROUBLESHOOT THIS AIRCRAFT
+        # "N4803P"  # Debonair  # TODO NEED TO TROUBLESHOOT THIS AIRCRAFT
     ]
     # flightaware_getter()  # DOES NOT NEED TO BE CALLED HERE, FOR TEST PURPOSES ONLY
     # flightaware_history("N81673")  #  DOES NOT NEED TO BE CALLED HERE, FOR TEST PURPOSES ONLY
     # db_data_getter(aircraft)  # DOES NOT NEED TO BE CALLED HERE, FOR TEST PURPOSES ONLY
     # calculate_stats(aircraft)  # TODO NEED TO SCRUB
-    # for aircraft in fleet[1:2]:
-    #     db_data_saver(aircraft)
+    for aircraft in fleet:
+        db_data_saver(aircraft)
 
     local_area_map()
 
