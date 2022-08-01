@@ -215,7 +215,14 @@ def flightaware_history(aircraft):
                 logger.warning(" Attempting to continue...")
                 continue
 
-            dept_time = convert24(columns[4].text)
+            dept_time = columns[4].text
+            # Catch cases where result is "First seen 06:11PM"
+            if dept_time[0].lower() == "f":
+                logger.debug(f" dept_time: {dept_time}")
+                dept_time = dept_time[11:18]
+                logger.info(f" \"First seen\" error... departure time has been corrected to: {dept_time}")
+            dept_time = convert24(dept_time)
+
 
             # Convert strings into a format that will allow them to be used as table names
             date = convert_date(date)
@@ -231,8 +238,7 @@ def flightaware_history(aircraft):
     except Exception as e:
         logger.critical(f" Failed to extract flight history! (flightaware_history)")
         logger.critical(f" error: {e}")
-        pass
-
+        logger.critical(f" Attempting to skip this row:")
 
 def flightaware_getter(url):
     """
@@ -612,7 +618,7 @@ def local_area_map():
     """Use the lat/long data to plot a composite map of the KC area"""
 
     # TODO UPDATE ERROR CONDITIONS TO PASS OVER NO HISTORY DATA
-    #  (An error occured with the SQLAclhemy engine! (db_data_saver))
+    #  (An error occurred with the SQLAclhemy engine! (db_data_saver))
 
     df_N81673 = db_data_getter("N81673")
     df_N3892Q = db_data_getter("N3892Q")
@@ -620,7 +626,7 @@ def local_area_map():
     # df_N182WK = db_data_getter("N182WK")
     # df_N58843 = db_data_getter("N58843")
     df_N82145 = db_data_getter("N82145")
-    # df_N4803P = db_data_getter("N4803P")
+    df_N4803P = db_data_getter("N4803P")
 
     # grab the latitude and longitude data from the panda dataframe
     geom_N81673 = [Point(xy) for xy in zip(df_N81673["longitude"].astype(float), df_N81673["latitude"].astype(float))]
@@ -629,7 +635,7 @@ def local_area_map():
     # geom_N182WK = [Point(xy) for xy in zip(df_N182WK["longitude"].astype(float), df_N182WK["latitude"].astype(float))]
     # geom_N58843 = [Point(xy) for xy in zip(df_N58843["longitude"].astype(float), df_N58843["latitude"].astype(float))]
     geom_N82145 = [Point(xy) for xy in zip(df_N82145["longitude"].astype(float), df_N82145["latitude"].astype(float))]
-    # geom_N4803P = [Point(xy) for xy in zip(df_N4803P["longitude"].astype(float), df_N4803P["latitude"].astype(float))]
+    geom_N4803P = [Point(xy) for xy in zip(df_N4803P["longitude"].astype(float), df_N4803P["latitude"].astype(float))]
 
     gdf_N81673 = GeoDataFrame(df_N81673, geometry=geom_N81673)
     gdf_N3892Q = GeoDataFrame(df_N3892Q, geometry=geom_N3892Q)
@@ -637,9 +643,9 @@ def local_area_map():
     # gdf_N182WK = GeoDataFrame(df_N182WK, geometry=geom_N182WK)
     # gdf_N58843 = GeoDataFrame(df_N58843, geometry=geom_N58843)
     gdf_N82145 = GeoDataFrame(df_N82145, geometry=geom_N82145)
-    # gdf_N4803P = GeoDataFrame(df_N4803P, geometry=geom_N4803P)
+    gdf_N4803P = GeoDataFrame(df_N4803P, geometry=geom_N4803P)
 
-    ax = state_plotter(["MO", "KS", "MN", "WI", "IL", "NE", "IA"], us_map=False)
+    ax = state_plotter(["MO", "KS", "IA", "MN", "IL", "WI"], us_map=False)
 
     gdf_N81673.plot(ax=ax, color="red", markersize=5)
     gdf_N3892Q.plot(ax=ax, color="blue", markersize=5)
@@ -647,11 +653,12 @@ def local_area_map():
     # gdf_N182WK.plot(ax=ax, color="cyan", markersize=5)
     # gdf_N58843.plot(ax=ax, color="white", markersize=5)
     gdf_N82145.plot(ax=ax, color="black", markersize=5)
-    # gdf_N4803P.plot(ax=ax, color="magenta", markersize=5)
+    gdf_N4803P.plot(ax=ax, color="magenta", markersize=5)
     plt.legend(['N81673 - Archer',
                 'N3892Q - C172',
                 'N20389 - C172',
-                'N82145 - Saratoga'])
+                'N82145 - Saratoga',
+                'N4803P - Debonair'])
     plt.show()
     pass
 
@@ -671,18 +678,18 @@ def main():
         # "N182WK",  # C182
         # "N58843",  # C182
         "N82145",  # Saratoga
-        # "N4803P"  # Debonair  # TODO NEED TO TROUBLESHOOT THIS AIRCRAFT
+        "N4803P"  # Debonair
     ]
     # flightaware_getter()  # DOES NOT NEED TO BE CALLED HERE, FOR TEST PURPOSES ONLY
     # flightaware_history("N81673")  #  DOES NOT NEED TO BE CALLED HERE, FOR TEST PURPOSES ONLY
     # db_data_getter(aircraft)  # DOES NOT NEED TO BE CALLED HERE, FOR TEST PURPOSES ONLY
     # calculate_stats(aircraft)  # TODO NEED TO SCRUB
-    for aircraft in fleet:
-        db_data_saver(aircraft)
+    # for aircraft in fleet:
+    #     db_data_saver(aircraft)
 
     local_area_map()
 
-    logging.info(" Code complete.")
+    logger.info(" Code complete.")
 
 
 # Make pw a global variable so it can be accessed by all the various database calls
