@@ -61,8 +61,8 @@ def mysql_connect(aircraft):
 def between_parentheses(s):
     """
     Take in a string and return what is in-between the parentheses.  # TODO CREATE ERROR CONDITIONS
-    :param s:
-    :return:
+    :param s: string containing closed parantheses.
+    :return: string contained between the parantheses.
     """
     res = []
     # Extracting from: Flight Track Log ✈ N81673 22-Jul-2022 (MO3-KOJC) - FlightAware
@@ -143,7 +143,7 @@ def convert_date(s):
 
 def flightaware_history(aircraft):
     """
-    Grab the aircraft history from flight aware and return pandas dataframe.
+    Grab the aircraft history from flight aware and return pandas dataframe containing history data.
     :param aircraft: aircraft ID. ex: N182WK
     :type aircraft: str
     :return: pandas df = [date, route, dept_time, URL]
@@ -181,7 +181,7 @@ def flightaware_history(aircraft):
         # Define of the dataframe
         df = pd.DataFrame(columns=["date", "route", "dept_time", "url"])
 
-        # Scrape data
+        # Scrape data and save to panda dataframe
         rows = table.find_all("tr")
         for row in rows[1:-1:]:
             urls = row.find_all("a", href=True)[0]
@@ -216,13 +216,12 @@ def flightaware_history(aircraft):
                 continue
 
             dept_time = columns[4].text
-            # Catch cases where result is "First seen 06:11PM"
+            # Catch cases where result contains "First seen"
             if dept_time[0].lower() == "f":
                 logger.debug(f" dept_time: {dept_time}")
                 dept_time = dept_time[11:18]
                 logger.info(f" \"First seen\" error... departure time has been corrected to: {dept_time}")
             dept_time = convert24(dept_time)
-
 
             # Convert strings into a format that will allow them to be used as table names
             date = convert_date(date)
@@ -238,17 +237,18 @@ def flightaware_history(aircraft):
     except Exception as e:
         logger.critical(f" Failed to extract flight history! (flightaware_history)")
         logger.critical(f" error: {e}")
-        logger.critical(f" Attempting to skip this row:")
+        logger.critical(f" Attempting to skip this row: {row}")
 
 def flightaware_getter(url):
     """
-    Web scraping to grab data from flight aware and save to file.
-    :return: Panda dataframe containing list[time, lat, long, kts, altitude]
+    Web scraping to grab track data from flight aware and save to pandas dataframe
+    :param url: The url extracted from MySQL flight_history table, where the track data is stored on flight aware
+    :return: Panda dataframe containing [time, lat, long, kts, altitude]
     """
 
     # Make a GET request to flightaware
     url = "https://flightaware.com"+f"{url}"+"/tracklog"
-    logger.info(f" URL: {url}")
+    logger.info(f" Getting track data from URL: {url}")
     r = requests.get(url, timeout=5)
     # Check the status code
     if r.status_code != 200:
@@ -292,8 +292,10 @@ def flightaware_getter(url):
         [1] = Altitude delta
         """
         builder = []
+        # len(row) == 21 ensures all the data is present for a given row of data
         if len(row) == 21:
             columns = row.find_all('span', class_="show-for-medium-up")
+            # len(row) columns ensures all the column elements are present
             if len(columns) == 5:
                 time = columns[0].text.strip()
                 time = time[3::].strip()  # remove the leading three letter weekday
@@ -320,17 +322,17 @@ def flightaware_getter(url):
 def db_data_saver(aircraft):
     """
     Export the web scrapped panda dataframe into MySQL
-    :param aircraft: N# of club aircraft, used for MySQL Schema
+    :param aircraft: N# of club aircraft, used for MySQL database name
     """
 
-    # Get pandas dataframe for PLANE HISTORY
+    # Get pandas dataframe for plane history [date, route, dept_time, url]
     hist_df = flightaware_history(aircraft)
 
     # Establish connection with MySQL and initialize the cursor
     db = mysql_connect(aircraft)
     mycursor = db.cursor()
 
-    # Create flight history PARENT table
+    # Create flight history parent table
     mycursor.execute("CREATE TABLE IF NOT EXISTS flight_history("
                      "date DATE, "
                      "route VARCHAR(15), "
@@ -349,7 +351,7 @@ def db_data_saver(aircraft):
         echo=False)
 
     try:
-        # Convert dataframe to sql table (FLIGHT HISTORY)
+        # Convert dataframe to sql table (flight_history)
         hist_df.to_sql('flight_history', engine, if_exists="append", index=False)
     except Exception as e:
         logger.critical(" An error occurred with the SQLAclhemy engine! (db_data_saver)")
@@ -363,11 +365,11 @@ def db_data_saver(aircraft):
     mycursor.execute("DROP TABLE flight_history")
     mycursor.execute("ALTER TABLE flight_history_temp RENAME TO flight_history")
 
-    # Create individual flight history tables
+    # Create track data tables using rows from flight_history
     mycursor.execute("SELECT * FROM flight_history")
     hist = []
     for x in mycursor:
-        # convert DATE format to string with underscores to allow to be used as table name
+        # convert DATE format into a string with underscores to allow to be used as table name
         date = str(x[0])
         date = date.replace("-", "_")
         hour = x[2]
@@ -378,7 +380,7 @@ def db_data_saver(aircraft):
         name = name.lower()
         try:
             # Create a flight details CHILD table
-            mycursor.execute(f"CREATE TABLE IF NOT EXISTS {name} ("
+            mycursor.execute(f"CREATE TABLE IF NOT EXISTS {name}("
                              "time MEDIUMINT(10), "
                              "latitude FLOAT, "
                              "longitude FLOAT, "
