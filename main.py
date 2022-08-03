@@ -149,7 +149,8 @@ def flightaware_history(aircraft):
     :return: pandas df = [date, route, dept_time, URL]
     """
     headers = {
-        'User_Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36',
+        'User_Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
+                      'Chrome/103.0.0.0 Safari/537.36',
         'Accept-Language': "en-US,en;q=0.9",
         'Referer': "https://google.com",
         "DNT": "1"
@@ -211,7 +212,7 @@ def flightaware_history(aircraft):
                     destination = between_parentheses(columns[3].text)
                 route = origin + "-" + destination
             except Exception as e:
-                logger.warning(f" Something went wrong while getting the plane history: {e}")
+                logger.warning(f" Something went wrong while getting the plane history. ERROR: {e}")
                 logger.warning(" Attempting to continue...")
                 continue
 
@@ -220,7 +221,7 @@ def flightaware_history(aircraft):
             if dept_time[0].lower() == "f":
                 logger.debug(f" dept_time: {dept_time}")
                 dept_time = dept_time[11:18]
-                logger.info(f" \"First seen\" error... departure time has been corrected to: {dept_time}")
+                logger.debug(f" \"First seen\" error... departure time has been corrected to: {dept_time}")
             dept_time = convert24(dept_time)
 
             # Convert strings into a format that will allow them to be used as table names
@@ -238,6 +239,9 @@ def flightaware_history(aircraft):
         logger.critical(f" Failed to extract flight history! (flightaware_history)")
         logger.critical(f" error: {e}")
         logger.critical(f" Attempting to skip this row: {row}")
+        # TODO SOLVE THE FOLLOWING ROW ERROR:
+        #  <tr data-tablesaw-no-labels=""> <td colspan="7" style="text-align: center">No History Data (searched last 14 days)</td></tr>
+
 
 def flightaware_getter(url):
     """
@@ -367,20 +371,36 @@ def db_data_saver(aircraft):
 
     # Create track data tables using rows from flight_history
     mycursor.execute("SELECT * FROM flight_history")
-    hist = []
+    new_hist = []
     for x in mycursor:
         # convert DATE format into a string with underscores to allow to be used as table name
         date = str(x[0])
         date = date.replace("-", "_")
         hour = x[2]
         hour = hour[0:2:]
-        hist.append(date + "__" + x[1] + "__" + hour)
+        new_hist.append(date + "__" + x[1].lower() + "__" + hour)
 
+    # Find which tables do not yet exist in the database by comparing new history and database flight_history lists
+    tables_exist = []
+    mycursor.execute("SHOW TABLES")
+    res = mycursor.fetchall()
+    for x in res:
+        tables_exist.append(x[0])
+    hist = [x for x in new_hist if x not in tables_exist]
+
+    # Exit condition if there are no new flights to add to the database
+    if not hist:
+        logger.info(f" {aircraft} has no new flights to add to the database!")
+        logger.info(f" Continuing...")
+        time.sleep(3)
+        return
+
+    # Build new flight details tables
     for name in hist:
         name = name.lower()
         try:
             # Create a flight details CHILD table
-            mycursor.execute(f"CREATE TABLE IF NOT EXISTS {name}("
+            mycursor.execute(f"CREATE TABLE {name}("
                              "time MEDIUMINT(10), "
                              "latitude FLOAT, "
                              "longitude FLOAT, "
@@ -394,12 +414,8 @@ def db_data_saver(aircraft):
 
     try:
         mycursor.execute("SELECT * FROM flight_history")
-        url_list = []
-        for x in mycursor:
-            url_list.append(x[3])
-
-        mycursor.execute("SELECT * FROM flight_history")
         name = []
+        url_list = []
         for x in mycursor:
             # convert DATE format to string with underscores to allow to be used as table name
             date = str(x[0])
@@ -407,6 +423,7 @@ def db_data_saver(aircraft):
             hour = x[2]
             hour = hour[0:2:]
             name.append(date + "__" + x[1] + "__" + hour)
+            url_list.append(x[3])
     except Exception as e:
         db.close()
         logger.critical(" An error occurred while trying to build the URL list! (db_data_saver)")
@@ -417,15 +434,24 @@ def db_data_saver(aircraft):
         logger.critical(f" Length of names and length of url_list are not the same!")
         sys.exit(f" length of names and length of url_list are not the same!")
 
+    # relate the name and url_list lists together and compare vs tables_exist to determine if new data is needed
+    # will create new_flights that only contains urls of "new" flights relative to the database history
+    flightaware_combined_hist = dict(zip(name, url_list))
+    new_flights = []
+    for new_leg in flightaware_combined_hist.keys():
+        if new_leg.lower() in hist:
+            new_flights.append(flightaware_combined_hist[new_leg])
+            logger.info(f" New leg found: {new_leg}")
+
     # try to get specific history data from each url page
     logger.info(" Attempting to get flight details...")
-    for i in range(len(url_list)):
+    for i in range(len(new_flights)):
         try:
-            details_df = flightaware_getter(url_list[i])
+            details_df = flightaware_getter(new_flights[i])
             # Convert dataframe to sql table (flight details)
             details_df.to_sql(name[i].lower(), engine, if_exists="replace", index=False)
-            logger.info(f" {i+1} out of {len(url_list)} completed!")
-            if i != len(url_list)-1:
+            logger.info(f" {i+1} out of {len(new_flights)} completed!")
+            if i != len(new_flights)-1:
                 logger.info(" Waiting 3 seconds...")
                 time.sleep(3)
         except Exception as e:
@@ -490,7 +516,7 @@ def db_data_getter(aircraft):
     return total_df
 
 
-def calculate_stats(aircraft):
+def calculate_stats(aircraft):  # TODO UPDATE WITH NEW TABLE NAMES
     """ Calculate various stats related to the aircraft's history"""
     # Establish connection with MySQL:
     db = mysql_connect(aircraft)
@@ -622,45 +648,58 @@ def local_area_map():
     # TODO UPDATE ERROR CONDITIONS TO PASS OVER NO HISTORY DATA
     #  (An error occurred with the SQLAclhemy engine! (db_data_saver))
 
-    df_N81673 = db_data_getter("N81673")
-    df_N3892Q = db_data_getter("N3892Q")
-    df_N20389 = db_data_getter("N20389")
-    # df_N182WK = db_data_getter("N182WK")
-    # df_N58843 = db_data_getter("N58843")
-    df_N82145 = db_data_getter("N82145")
-    df_N4803P = db_data_getter("N4803P")
-
-    # grab the latitude and longitude data from the panda dataframe
-    geom_N81673 = [Point(xy) for xy in zip(df_N81673["longitude"].astype(float), df_N81673["latitude"].astype(float))]
-    geom_N3892Q = [Point(xy) for xy in zip(df_N3892Q["longitude"].astype(float), df_N3892Q["latitude"].astype(float))]
-    geom_N20389 = [Point(xy) for xy in zip(df_N20389["longitude"].astype(float), df_N20389["latitude"].astype(float))]
-    # geom_N182WK = [Point(xy) for xy in zip(df_N182WK["longitude"].astype(float), df_N182WK["latitude"].astype(float))]
-    # geom_N58843 = [Point(xy) for xy in zip(df_N58843["longitude"].astype(float), df_N58843["latitude"].astype(float))]
-    geom_N82145 = [Point(xy) for xy in zip(df_N82145["longitude"].astype(float), df_N82145["latitude"].astype(float))]
-    geom_N4803P = [Point(xy) for xy in zip(df_N4803P["longitude"].astype(float), df_N4803P["latitude"].astype(float))]
-
-    gdf_N81673 = GeoDataFrame(df_N81673, geometry=geom_N81673)
-    gdf_N3892Q = GeoDataFrame(df_N3892Q, geometry=geom_N3892Q)
-    gdf_N20389 = GeoDataFrame(df_N20389, geometry=geom_N20389)
-    # gdf_N182WK = GeoDataFrame(df_N182WK, geometry=geom_N182WK)
-    # gdf_N58843 = GeoDataFrame(df_N58843, geometry=geom_N58843)
-    gdf_N82145 = GeoDataFrame(df_N82145, geometry=geom_N82145)
-    gdf_N4803P = GeoDataFrame(df_N4803P, geometry=geom_N4803P)
-
+    # Define the map
     ax = state_plotter(["MO", "KS", "IA", "MN", "IL", "WI"], us_map=False)
 
+    # N81673 Archer
+    df_N81673 = db_data_getter("N81673")
+    geom_N81673 = [Point(xy) for xy in zip(df_N81673["longitude"].astype(float), df_N81673["latitude"].astype(float))]
+    gdf_N81673 = GeoDataFrame(df_N81673, geometry=geom_N81673)
     gdf_N81673.plot(ax=ax, color="red", markersize=5)
+
+    # N3892Q C172 (OJC)
+    df_N3892Q = db_data_getter("N3892Q")
+    geom_N3892Q = [Point(xy) for xy in zip(df_N3892Q["longitude"].astype(float), df_N3892Q["latitude"].astype(float))]
+    gdf_N3892Q = GeoDataFrame(df_N3892Q, geometry=geom_N3892Q)
     gdf_N3892Q.plot(ax=ax, color="blue", markersize=5)
+
+    # N20389 C172 (OJC)
+    df_N20389 = db_data_getter("N20389")
+    geom_N20389 = [Point(xy) for xy in zip(df_N20389["longitude"].astype(float), df_N20389["latitude"].astype(float))]
+    gdf_N20389 = GeoDataFrame(df_N20389, geometry=geom_N20389)
     gdf_N20389.plot(ax=ax, color="green", markersize=5)
+
+    # N182WK C182 (LXT)
+    # df_N182WK = db_data_getter("N182WK")
+    # geom_N182WK = [Point(xy) for xy in zip(df_N182WK["longitude"].astype(float), df_N182WK["latitude"].astype(float))]
+    # gdf_N182WK = GeoDataFrame(df_N182WK, geometry=geom_N182WK)
     # gdf_N182WK.plot(ax=ax, color="cyan", markersize=5)
+
+    # N58843 C182 (LXT)
+    # df_N58843 = db_data_getter("N58843")
+    # geom_N58843 = [Point(xy) for xy in zip(df_N58843["longitude"].astype(float), df_N58843["latitude"].astype(float))]
+    # gdf_N58843 = GeoDataFrame(df_N58843, geometry=geom_N58843)
     # gdf_N58843.plot(ax=ax, color="white", markersize=5)
+
+    # N82145 Saratoga
+    df_N82145 = db_data_getter("N82145")
+    geom_N82145 = [Point(xy) for xy in zip(df_N82145["longitude"].astype(float), df_N82145["latitude"].astype(float))]
+    gdf_N82145 = GeoDataFrame(df_N82145, geometry=geom_N82145)
     gdf_N82145.plot(ax=ax, color="black", markersize=5)
+
+    # N4803P Debonair
+    df_N4803P = db_data_getter("N4803P")
+    geom_N4803P = [Point(xy) for xy in zip(df_N4803P["longitude"].astype(float), df_N4803P["latitude"].astype(float))]
+    gdf_N4803P = GeoDataFrame(df_N4803P, geometry=geom_N4803P)
     gdf_N4803P.plot(ax=ax, color="magenta", markersize=5)
+
+    # finally, plot
     plt.legend(['N81673 - Archer',
                 'N3892Q - C172',
                 'N20389 - C172',
                 'N82145 - Saratoga',
                 'N4803P - Debonair'])
+
     plt.show()
     pass
 
@@ -677,17 +716,18 @@ def main():
         "N81673",  # Archer
         "N3892Q",  # C172
         "N20389",  # C172
-        # "N182WK",  # C182
-        # "N58843",  # C182
+        # # "N182WK",  # C182
+        # # "N58843",  # C182
         "N82145",  # Saratoga
         "N4803P"  # Debonair
     ]
-    # flightaware_getter()  # DOES NOT NEED TO BE CALLED HERE, FOR TEST PURPOSES ONLY
-    # flightaware_history("N81673")  #  DOES NOT NEED TO BE CALLED HERE, FOR TEST PURPOSES ONLY
-    # db_data_getter(aircraft)  # DOES NOT NEED TO BE CALLED HERE, FOR TEST PURPOSES ONLY
+
     # calculate_stats(aircraft)  # TODO NEED TO SCRUB
-    # for aircraft in fleet:
-    #     db_data_saver(aircraft)
+
+    for aircraft in fleet:
+        logger.info(f" ~~~~~~~~~~~~~ {aircraft} ~~~~~~~~~~~~~")
+        db_data_saver(aircraft)
+        logger.info(f"\n")
 
     local_area_map()
 
