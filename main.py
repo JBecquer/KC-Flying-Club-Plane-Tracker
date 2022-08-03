@@ -185,6 +185,13 @@ def flightaware_history(aircraft):
         # Scrape data and save to panda dataframe
         rows = table.find_all("tr")
         for row in rows[1:-1:]:
+
+            # Catch edge case if there is no history data from the past 14 days
+            if "No History Data" in row.text:
+                logger.warning(f" {aircraft} has no history in the last 14 days!")
+                logger.warning(f" Continuing to next aircraft...")
+                return
+
             urls = row.find_all("a", href=True)[0]
             url = urls.get("href")
             """
@@ -211,6 +218,9 @@ def flightaware_history(aircraft):
                 else:
                     destination = between_parentheses(columns[3].text)
                 route = origin + "-" + destination
+            except TypeError:
+                logger.info(f" The airplane is currently in-air! The first row of the table has to be skipped...")
+                continue
             except Exception as e:
                 logger.warning(f" Something went wrong while getting the plane history. ERROR: {e}")
                 logger.warning(" Attempting to continue...")
@@ -331,6 +341,10 @@ def db_data_saver(aircraft):
 
     # Get pandas dataframe for plane history [date, route, dept_time, url]
     hist_df = flightaware_history(aircraft)
+
+    # catch edge case in flightaware_history, where no flight data exists from the past 14 days. Func will return None
+    if hist_df is None:
+        return
 
     # Establish connection with MySQL and initialize the cursor
     db = mysql_connect(aircraft)
@@ -645,9 +659,6 @@ def state_plotter(states, us_map=True):
 def local_area_map():
     """Use the lat/long data to plot a composite map of the KC area"""
 
-    # TODO UPDATE ERROR CONDITIONS TO PASS OVER NO HISTORY DATA
-    #  (An error occurred with the SQLAclhemy engine! (db_data_saver))
-
     # Define the map
     ax = state_plotter(["MO", "KS", "IA", "MN", "IL", "WI"], us_map=False)
 
@@ -669,7 +680,7 @@ def local_area_map():
     gdf_N20389 = GeoDataFrame(df_N20389, geometry=geom_N20389)
     gdf_N20389.plot(ax=ax, color="green", markersize=5)
 
-    # N182WK C182 (LXT)
+    # N182WK C182 (LXT)  # TODO NEED TO UPDATE FOR PAST MONTH, AND UPDATE THESE CALL CONDITIONS TO INCLUDE NO FLIGHT HISTORY
     # df_N182WK = db_data_getter("N182WK")
     # geom_N182WK = [Point(xy) for xy in zip(df_N182WK["longitude"].astype(float), df_N182WK["latitude"].astype(float))]
     # gdf_N182WK = GeoDataFrame(df_N182WK, geometry=geom_N182WK)
@@ -716,8 +727,8 @@ def main():
         "N81673",  # Archer
         "N3892Q",  # C172
         "N20389",  # C172
-        # # "N182WK",  # C182
-        # # "N58843",  # C182
+        "N182WK",  # C182
+        "N58843",  # C182
         "N82145",  # Saratoga
         "N4803P"  # Debonair
     ]
@@ -729,7 +740,7 @@ def main():
         db_data_saver(aircraft)
         logger.info(f"\n")
 
-    local_area_map()
+    # local_area_map()
 
     logger.info(" Code complete.")
 
