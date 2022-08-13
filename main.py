@@ -17,11 +17,20 @@ from shapely.geometry import Point
 import geopandas as gpd
 from geopandas import GeoDataFrame
 import matplotlib.pyplot as plt
-import time
 import logging
+import tkinter as tk
+from tkinter import ttk
+from tkinter.scrolledtext import ScrolledText
+from time import sleep
+from datetime import datetime
 
 
 # create logger (copied from https://docs.python.org/3/howto/logging.html#logging-advanced-tutorial)
+# logging.basicConfig(filename="logname.txt",
+#                     filemode="w+",
+#                     format="%(levelname)s - %(message)s",
+#                     level=logging.DEBUG)
+
 logger = logging.getLogger('Main')
 logger.setLevel(logging.DEBUG)
 
@@ -282,7 +291,8 @@ def flightaware_getter(url):
             raise Exception(f" Table class \"prettyTable fullWidth\" not found! {url}")
     except Exception as e:
         logger.critical(f" Error finding table on FlightAware! (flightaware_getter)")
-        sys.exit(e)
+        logger.critical(f" Attempting to continue...")
+        return
 
     # Defining of the dataframe
     df = pd.DataFrame(columns=["time", "latitude", "longitude", "knots", "altitude"])
@@ -406,7 +416,7 @@ def db_data_saver(aircraft):
     if not hist:
         logger.info(f" {aircraft} has no new flights to add to the database!")
         logger.info(f" Continuing...")
-        time.sleep(3)
+        sleep(3)
         return
 
     # Build new flight details tables
@@ -462,17 +472,19 @@ def db_data_saver(aircraft):
     for i in range(len(new_flights)):
         try:
             details_df = flightaware_getter(new_flights[i])
+            if details_df is None:
+                continue
             # Convert dataframe to sql table (flight details)
             details_df.to_sql(name[i].lower(), engine, if_exists="replace", index=False)
             logger.info(f" {i+1} out of {len(new_flights)} completed!")
             if i != len(new_flights)-1:
                 logger.info(" Waiting 3 seconds...")
-                time.sleep(3)
+                sleep(3)
         except Exception as e:
             logger.warning(f" An error occurred while trying to populate the flight data tables! (db_data_saver)")
             logger.warning(f" Error: {e}")
             logger.warning(" Waiting 3 seconds...")
-            time.sleep(3)
+            sleep(3)
     logger.info(f" Tables built successfully!")
     db.close()
 
@@ -656,61 +668,65 @@ def state_plotter(states, us_map=True):
     return ax
 
 
-def local_area_map():
-    """Use the lat/long data to plot a composite map of the KC area"""
+def local_area_map(fleet):
+    """Use the lat/long data to plot a composite map of the KC area
+    # TODO ADD DOCSTRING
+    """
 
     # Define the map
-    ax = state_plotter(["MO", "KS", "IA", "MN", "IL", "WI"], us_map=False)
+    ax = state_plotter(["MO", "KS", "IA", "MN", "IL", "WI", "NE"], us_map=False)
 
     # N81673 Archer
-    df_N81673 = db_data_getter("N81673")
-    geom_N81673 = [Point(xy) for xy in zip(df_N81673["longitude"].astype(float), df_N81673["latitude"].astype(float))]
-    gdf_N81673 = GeoDataFrame(df_N81673, geometry=geom_N81673)
-    gdf_N81673.plot(ax=ax, color="red", markersize=5)
+    if "N81673" in fleet:
+        df_N81673 = db_data_getter("N81673")
+        geom_N81673 = [Point(xy) for xy in zip(df_N81673["longitude"].astype(float), df_N81673["latitude"].astype(float))]
+        gdf_N81673 = GeoDataFrame(df_N81673, geometry=geom_N81673)
+        gdf_N81673.plot(ax=ax, color="red", markersize=5, label="Archer - N81673")
 
     # N3892Q C172 (OJC)
-    df_N3892Q = db_data_getter("N3892Q")
-    geom_N3892Q = [Point(xy) for xy in zip(df_N3892Q["longitude"].astype(float), df_N3892Q["latitude"].astype(float))]
-    gdf_N3892Q = GeoDataFrame(df_N3892Q, geometry=geom_N3892Q)
-    gdf_N3892Q.plot(ax=ax, color="blue", markersize=5)
+    if "N3892Q" in fleet:
+        df_N3892Q = db_data_getter("N3892Q")
+        geom_N3892Q = [Point(xy) for xy in zip(df_N3892Q["longitude"].astype(float), df_N3892Q["latitude"].astype(float))]
+        gdf_N3892Q = GeoDataFrame(df_N3892Q, geometry=geom_N3892Q)
+        gdf_N3892Q.plot(ax=ax, color="blue", markersize=5, label="C172 - N3892Q")
 
     # N20389 C172 (OJC)
-    df_N20389 = db_data_getter("N20389")
-    geom_N20389 = [Point(xy) for xy in zip(df_N20389["longitude"].astype(float), df_N20389["latitude"].astype(float))]
-    gdf_N20389 = GeoDataFrame(df_N20389, geometry=geom_N20389)
-    gdf_N20389.plot(ax=ax, color="green", markersize=5)
+    if "N20389" in fleet:
+        df_N20389 = db_data_getter("N20389")
+        geom_N20389 = [Point(xy) for xy in zip(df_N20389["longitude"].astype(float), df_N20389["latitude"].astype(float))]
+        gdf_N20389 = GeoDataFrame(df_N20389, geometry=geom_N20389)
+        gdf_N20389.plot(ax=ax, color="green", markersize=5, label="C172 - N20389")
 
     # N182WK C182 (LXT)  # TODO NEED TO UPDATE FOR PAST MONTH, AND UPDATE THESE CALL CONDITIONS TO INCLUDE NO FLIGHT HISTORY
-    # df_N182WK = db_data_getter("N182WK")
-    # geom_N182WK = [Point(xy) for xy in zip(df_N182WK["longitude"].astype(float), df_N182WK["latitude"].astype(float))]
-    # gdf_N182WK = GeoDataFrame(df_N182WK, geometry=geom_N182WK)
-    # gdf_N182WK.plot(ax=ax, color="cyan", markersize=5)
+    # if "N182WK" in fleet:
+        # df_N182WK = db_data_getter("N182WK")
+        # geom_N182WK = [Point(xy) for xy in zip(df_N182WK["longitude"].astype(float), df_N182WK["latitude"].astype(float))]
+        # gdf_N182WK = GeoDataFrame(df_N182WK, geometry=geom_N182WK)
+        # gdf_N182WK.plot(ax=ax, color="cyan", markersize=5, label="C182 - N182WK")
 
     # N58843 C182 (LXT)
-    # df_N58843 = db_data_getter("N58843")
-    # geom_N58843 = [Point(xy) for xy in zip(df_N58843["longitude"].astype(float), df_N58843["latitude"].astype(float))]
-    # gdf_N58843 = GeoDataFrame(df_N58843, geometry=geom_N58843)
-    # gdf_N58843.plot(ax=ax, color="white", markersize=5)
+    if "N58843" in fleet:
+        df_N58843 = db_data_getter("N58843")
+        geom_N58843 = [Point(xy) for xy in zip(df_N58843["longitude"].astype(float), df_N58843["latitude"].astype(float))]
+        gdf_N58843 = GeoDataFrame(df_N58843, geometry=geom_N58843)
+        gdf_N58843.plot(ax=ax, color="white", markersize=5, label="C182 - N58843")
 
     # N82145 Saratoga
-    df_N82145 = db_data_getter("N82145")
-    geom_N82145 = [Point(xy) for xy in zip(df_N82145["longitude"].astype(float), df_N82145["latitude"].astype(float))]
-    gdf_N82145 = GeoDataFrame(df_N82145, geometry=geom_N82145)
-    gdf_N82145.plot(ax=ax, color="black", markersize=5)
+    if "N82145" in fleet:
+        df_N82145 = db_data_getter("N82145")
+        geom_N82145 = [Point(xy) for xy in zip(df_N82145["longitude"].astype(float), df_N82145["latitude"].astype(float))]
+        gdf_N82145 = GeoDataFrame(df_N82145, geometry=geom_N82145)
+        gdf_N82145.plot(ax=ax, color="black", markersize=5, label="Saratoga - N82145")
 
     # N4803P Debonair
-    df_N4803P = db_data_getter("N4803P")
-    geom_N4803P = [Point(xy) for xy in zip(df_N4803P["longitude"].astype(float), df_N4803P["latitude"].astype(float))]
-    gdf_N4803P = GeoDataFrame(df_N4803P, geometry=geom_N4803P)
-    gdf_N4803P.plot(ax=ax, color="magenta", markersize=5)
+    if "N4803P" in fleet:
+        df_N4803P = db_data_getter("N4803P")
+        geom_N4803P = [Point(xy) for xy in zip(df_N4803P["longitude"].astype(float), df_N4803P["latitude"].astype(float))]
+        gdf_N4803P = GeoDataFrame(df_N4803P, geometry=geom_N4803P)
+        gdf_N4803P.plot(ax=ax, color="magenta", markersize=5, label="Debonair - N4803P")
 
     # finally, plot
-    plt.legend(['N81673 - Archer',
-                'N3892Q - C172',
-                'N20389 - C172',
-                'N82145 - Saratoga',
-                'N4803P - Debonair'])
-
+    plt.legend(loc="upper right")
     plt.show()
     pass
 
@@ -723,30 +739,402 @@ def conus_area_map():
 def main():
     """Main entry point for the script."""
 
-    fleet = [
-        "N81673",  # Archer
-        "N3892Q",  # C172
-        "N20389",  # C172
-        "N182WK",  # C182
-        "N58843",  # C182
-        "N82145",  # Saratoga
-        "N4803P"  # Debonair
-    ]
+    #-------------------------------------------------------------------------------------------------------------------
+    #                                                   TKINTER GUI WINDOW
+    #                                       Reference https://www.pythontutorial.net/tkinter
+    #-------------------------------------------------------------------------------------------------------------------
 
-    # calculate_stats(aircraft)  # TODO NEED TO SCRUB
+    # establish root as the main window
+    root = tk.Tk()
+    root.title('FCKC Track Log')
+    root.geometry('930x520+200+200')
+    root.resizable(False, False)
 
-    for aircraft in fleet:
-        logger.info(f" ~~~~~~~~~~~~~ {aircraft} ~~~~~~~~~~~~~")
-        db_data_saver(aircraft)
-        logger.info(f"\n")
+    # Bring the window to the top of the screen
+    root.attributes('-topmost', True)
+    root.update()
+    root.attributes('-topmost', False)
 
-    # local_area_map()
+    fleet = ("N81673 - Archer",
+             "N2389Q - C172",
+             "N20389 - C172",
+             "N182WK - C182",
+             "N58843 - C182",
+             "N82145 - Saratoga",
+             "N4803P - Debonair")
+
+    def check_pw():
+        # Check if the PW has been set. If not, get PW with mysql_connect()
+        try:
+            pw
+        except NameError:
+            mysql_connect()
+
+    def error_none_selected():
+        # create message box that contains the error if no aircraft were selected
+        none_select = tk.Toplevel(root)
+        none_select.title("Error!")
+        none_select.resizable(False, False)
+
+        # Position message box to be coordinated with the root window
+        root_x = root.winfo_rootx()
+        root_y = root.winfo_rooty()
+        win_x = root_x + 300
+        win_y = root_y + 100
+        none_select.geometry(f'+{win_x}+{win_y}')
+
+        # create the label on the message box
+        prog_msg = tk.Label(none_select, text=f" Error, no aircraft selected.")
+        prog_msg.grid(
+            column=1,
+            row=0,
+            pady=10,
+            sticky="S")
+
+        # create button that closes the error box
+        close_button = ttk.Button(
+            none_select,
+            text='Close',
+            command=none_select.destroy)
+        close_button.grid(
+            column=1,
+            row=1,
+            sticky="N")
+
+    def mysql_connect():
+        # create message box to take in the MySQL database password
+        connector = tk.Toplevel(root)
+        connector.title("MySQL Connect")
+        connector.resizable(False, False)
+
+        # Position message box to be coordinated with the root window
+        root_x = root.winfo_rootx()
+        root_y = root.winfo_rooty()
+        win_x = root_x + 300
+        win_y = root_y + 100
+        connector.geometry(f'+{win_x}+{win_y}')
+
+        # TEXT: create the label on the message box
+        connect_text = tk.Label(connector,
+                                text=f" Please enter the MySQL database password: ")
+        connect_text.grid(
+            column=1,
+            row=0,
+            pady=20)
+
+        # Get the password using ENTRY
+        pass_text = tk.Entry(connector, show="*")
+        pass_text.grid(
+            column=1,
+            row=1,
+            padx=25)
+
+        # BUTTON: Cancel button
+        cancel_button = ttk.Button(
+            connector,
+            text='Cancel',
+            command=connector.destroy)
+        cancel_button.grid(
+            column=1,
+            row=3,
+            sticky="W",
+            pady=5,
+            padx=5)
+
+        # BUTTON: Connect to MySQL
+        connect_button = ttk.Button(
+            connector,
+            text='Connect',
+            command=lambda: mysql_dummy())
+        connect_button.grid(
+            column=1,
+            row=3,
+            sticky="E",
+            pady=5,
+            padx=5)
+
+        def mysql_dummy():
+            # create the global variable pw and get it from the pass_text entry widget
+            global pw
+            pw = pass_text.get()
+
+            # log output
+            log_output.configure(state="normal")  # allow editing of the log
+            log_output.insert(tk.END, f" Attempting to connect to MySQL...\n\n")
+
+            # Test the database connection
+            try:
+                # Init connection to MySQL database
+                db = mysql.connector.connect(
+                    host="localhost",
+                    user="root",
+                    passwd=pw,
+                )
+                log_output.insert(tk.END, f" Connection successful!\n\n")
+            except Exception as e:
+                logger.critical(f" database connection failed! (mysql_dummy)")
+                log_output.insert(tk.END, f" Incorrect password, please try again.\n\n")
+            else:
+                connector.destroy()
+                db.close()  # close db connection, as it was only used to test the password
+
+            # Always scroll to the index: "end"
+            log_output.see(tk.END)
+            log_output.configure(state="disabled")  # disable editing of the log
+
+        # Wait for the window to close before continuing.
+        # This is most useful when "interrupting" other functions to ask for the password to be entered.
+        connector.wait_window(connector)
+
+    def get_aircraft_data():
+        check_pw()
+
+        # get selected indices
+        selected_indices = fleet_listbox.curselection()
+        # get selected items using indices
+        selected_aircraft = [fleet_listbox.get(i) for i in selected_indices]
+        # Remove the excess information from the selectable listbox data
+        for i, x in enumerate(selected_aircraft):
+            selected_aircraft[i] = x.split("-")[0].strip()
+        if not selected_aircraft:
+            error_none_selected()
+            return
+
+        selected_aircraft_str = "\n".join(selected_aircraft)
+
+        # create message box that contains a progress bar on the status of the fleet
+        aircraft_progress = tk.Toplevel(root)
+        aircraft_progress.title("Data Gathering Progress")
+        aircraft_progress.resizable(False, False)
+
+        # Bring the window to the top of the screen
+        aircraft_progress.attributes('-topmost', True)
+        aircraft_progress.update()
+        aircraft_progress.attributes('-topmost', False)
+
+        # Position message box to be coordinated with the root window
+        root_x = root.winfo_rootx()
+        root_y = root.winfo_rooty()
+        win_x = root_x + 250
+        win_y = root_y + 50
+        aircraft_progress.geometry(f'+{win_x}+{win_y}')
+
+        # Configure columns/rows
+        aircraft_progress.columnconfigure(1, weight=1)
+        aircraft_progress.rowconfigure(1, weight=1)
+
+        # create the label on the message box
+        prog_msg = tk.Label(aircraft_progress,
+                            text=f" Getting aircraft data for: \n{selected_aircraft_str}")
+        prog_msg.grid(column=1, row=0)
+
+        # create the progressbar
+        pb = ttk.Progressbar(
+            aircraft_progress,
+            orient='horizontal',
+            mode='indeterminate',
+            length=280)
+
+        # place the progressbar
+        pb.grid(column=1, row=1, columnspan=2, padx=10, pady=20)
+        pb.start()
+
+        # BUTTON: cancel data gathering
+        data_cancel_button = ttk.Button(
+            aircraft_progress,
+            text="Cancel",
+            command=lambda: data_cancel())
+        data_cancel_button.grid(
+            column=1,
+            row=2)
+
+
+        # TODO THREADING
+        # Call data gathering
+        for aircraft in selected_aircraft:
+            logger.info(f" ~~~~~~~~~~~~~ {aircraft} ~~~~~~~~~~~~~")
+            db_data_saver(aircraft)
+            logger.info(f"\n")
+            # if aircraft == selected_aircraft[-1]:
+            #     log_output.configure(state="normal")  # allow editing of the log
+            #     log_output.insert(tk.END, f"Data gathering completed!\n\n")
+            #     aircraft_progress.destroy()
+            #     # Always scroll to the index: "end"
+            #     log_output.see(tk.END)
+            #     log_output.configure(state="disabled")  # disable editing of the log
+            # else:
+            #     sleep(1)
+
+        def data_cancel():
+            log_output.configure(state="normal")  # allow editing of the log
+            log_output.insert(tk.END, f"Data gathering has been cancelled!\n\n")
+            aircraft_progress.destroy()
+            # Always scroll to the index: "end"
+            log_output.see(tk.END)
+            log_output.configure(state="disabled")  # disable editing of the log
+
+    def graph_aircraft():
+        check_pw()
+
+        # get selected indices
+        selected_indices = fleet_listbox.curselection()
+        # get selected items
+        sel_aircraft = [fleet_listbox.get(i) for i in selected_indices]
+        # Remove the excess information from the selectable table data
+        for i, x in enumerate(sel_aircraft):
+            sel_aircraft[i] = x.split("-")[0].strip()
+        if not sel_aircraft:
+            error_none_selected()
+            return
+        sel_aircraft_str = "   ".join(sel_aircraft)
+
+        # Call graphing function
+        local_area_map(sel_aircraft)
+
+        # log the commands
+        log_output.configure(state="normal")  # allow editing of the log
+        log_output.insert(tk.END,
+                          f" A local graph with the following aircraft has been created:\n {sel_aircraft_str}")
+        log_output.insert(tk.END, f"\n\n")
+        # Always scroll to the index: "end"
+        log_output.see(tk.END)
+        log_output.configure(state="disabled")  # disable editing of the log
+
+    def calculate_stats_placeholder():
+        # TODO placeholder until calculate_stats is scrabbed
+        check_pw()
+
+        # log the commands
+        log_output.configure(state="normal")  # allow editing of the log
+        log_output.insert(tk.END, f"\n Stats! Stats! Stats!")
+        log_output.insert(tk.END, f"\n")
+        # Always scroll to the index: "end"
+        log_output.see(tk.END)
+        log_output.configure(state="disabled")  # disable editing of the log
+
+    def clear_log():
+        log_output.configure(state="normal")  # allow editing of the log
+        log_output.delete("1.0", tk.END)
+        log_output.configure(state="disabled")  # disable editing of the log
+
+    # define the row where the main buttons are
+    bot_button_row = 4
+
+    # COMBOBOX: Select month
+    selected_month = tk.StringVar()
+    month_cb = ttk.Combobox(root, textvariable=selected_month)
+    # prevent typing a value
+    month_cb["state"] = "readonly"
+    # set values
+    month_cb["values"] = ["January", "February", "March", "April", "May", "June", "July", "August", "September",
+                          "October", "November", "December"]
+    month_cb.grid(
+        column=0,
+        row=1,
+        padx=5,
+        sticky="N")
+
+    # LABEL: Select month
+    sel_month_lab = tk.Label(root, text="Select month:")
+    sel_month_lab.grid(
+        column=0,
+        row=0,
+        pady=5)
+    # Set the default value to the current month
+    current_month = datetime.now().strftime("%B")
+    month_cb.set(current_month)
+
+    # LABEL: select aircraft
+    fleet_lab = ttk.Label(root, text="Select aircraft:")
+    fleet_lab.grid(
+        column=0,
+        row=1,
+        sticky="S")
+
+    # LISTBOX: to select which aircraft to manipulate
+    fleet_var = tk.StringVar(value=fleet)
+    fleet_listbox = tk.Listbox(
+        root,
+        listvariable=fleet_var,
+        height=7,
+        selectmode="extended")
+    fleet_listbox.grid(
+        column=0,
+        row=2,
+        sticky="N")
+
+    # BUTTON: Connect to MySQL Database
+    connect_mysql = ttk.Button(
+        root,
+        text="Connect to MySQL",
+        command=lambda: mysql_connect())
+    connect_mysql.grid(
+        column=0,
+        row=bot_button_row,
+        padx=25)
+
+    # BUTTON: Get flight history
+    aircraft_button = ttk.Button(
+        root,
+        text="Get flight history",
+        command=lambda: get_aircraft_data())
+    aircraft_button.grid(
+        column=2,
+        row=bot_button_row,
+        sticky="E")
+
+    # BUTTON: Create local graph
+    aircraft_button = ttk.Button(
+        root,
+        text="Create local graph",
+        command=lambda: graph_aircraft())
+    aircraft_button.grid(
+        column=3,
+        row=bot_button_row,
+        pady=10)
+
+    # BUTTON: Clear log
+    clear_log_button = ttk.Button(
+        root,
+        text="Clear text log",
+        command=lambda: clear_log())
+    clear_log_button.grid(
+        column=1,
+        row=bot_button_row)
+
+    # BUTTON: Calculate stats
+    stats_button = ttk.Button(
+        root,
+        text="Calculate stats",
+        command=lambda: calculate_stats_placeholder())
+    stats_button.grid(
+        column=5,
+        row=bot_button_row)
+
+    # LABEL: output log
+    output_lab = ttk.Label(root, text="Output log", font=("Helvetica", 12))
+    output_lab.grid(
+        column=1,
+        row=0,
+        sticky="SW",
+        padx=25)
+
+    # TEXT: Output log
+    log_output = ScrolledText(root, height=15, width=65)
+    log_output.grid(
+        column=1,
+        row=1,
+        columnspan=3,
+        rowspan=2,
+        padx=25)
+    # Disable editing of the output log. state="normal" will have to be called prior to every edit
+    log_output.configure(state="disabled")
+
+    # Execute
+    root.mainloop()
 
     logger.info(" Code complete.")
 
-
-# Make pw a global variable so it can be accessed by all the various database calls
-pw = getpass(" Enter MySQL password:")
 
 if __name__ == "__main__":
     sys.exit(main())
