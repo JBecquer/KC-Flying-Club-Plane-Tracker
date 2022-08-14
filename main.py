@@ -670,13 +670,13 @@ def state_plotter(states, us_map=True):
     return ax
 
 
-def local_area_map(fleet):
+def local_area_map(fleet, area):
     """Use the lat/long data to plot a composite map of the KC area
     # TODO ADD DOCSTRING
     """
 
-    # Define the map
-    ax = state_plotter(["MO", "KS", "IA", "MN", "IL", "WI", "NE"], us_map=False)
+    # Define the map # todo add new text box and get() states.
+    ax = state_plotter(area, us_map=False)
 
     # N81673 Archer
     if "N81673" in fleet:
@@ -699,12 +699,12 @@ def local_area_map(fleet):
         gdf_N20389 = GeoDataFrame(df_N20389, geometry=geom_N20389)
         gdf_N20389.plot(ax=ax, color="green", markersize=5, label="C172 - N20389")
 
-    # N182WK C182 (LXT)  # TODO NEED TO UPDATE FOR PAST MONTH, AND UPDATE THESE CALL CONDITIONS TO INCLUDE NO FLIGHT HISTORY
-    # if "N182WK" in fleet:
-        # df_N182WK = db_data_getter("N182WK")
-        # geom_N182WK = [Point(xy) for xy in zip(df_N182WK["longitude"].astype(float), df_N182WK["latitude"].astype(float))]
-        # gdf_N182WK = GeoDataFrame(df_N182WK, geometry=geom_N182WK)
-        # gdf_N182WK.plot(ax=ax, color="cyan", markersize=5, label="C182 - N182WK")
+    # N182WK C182 (LXT)  # TODO UPDATE THESE CALL CONDITIONS TO INCLUDE NO FLIGHT HISTORY (ex: no flights in August)
+    if "N182WK" in fleet:
+        df_N182WK = db_data_getter("N182WK")
+        geom_N182WK = [Point(xy) for xy in zip(df_N182WK["longitude"].astype(float), df_N182WK["latitude"].astype(float))]
+        gdf_N182WK = GeoDataFrame(df_N182WK, geometry=geom_N182WK)
+        gdf_N182WK.plot(ax=ax, color="cyan", markersize=5, label="C182 - N182WK")
 
     # N58843 C182 (LXT)
     if "N58843" in fleet:
@@ -991,7 +991,23 @@ def main():
         sel_aircraft_str = "   ".join(sel_aircraft)
 
         # Call graphing function
-        local_area_map(sel_aircraft)
+        states_list = ["AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS",
+                       "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY",
+                       "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV",
+                       "WI", "WY"]
+        states_area = states_text.get("1.0", "end")
+
+        try:
+            states_area = states_area.split(",")
+            states_area = [x.strip() for x in states_area]
+            for state in states_area:
+                if state not in states_list:
+                    logger.warning(f" State ({state}) entered not in the states_list (graph_aircraft)")
+                    return
+        except Exception as e:
+            logger.warning(f" Something went wrong with graph_aircraft, splitting of the states.")
+
+        local_area_map(sel_aircraft, states_area)
 
         # log the commands
         log_output.configure(state="normal")  # allow editing of the log
@@ -1026,6 +1042,19 @@ def main():
         check_pw()
         # get the data entered in url_text
         entered_url = url_text.get("1.0", "end")
+
+        # Catch no URL error condition
+        if len(entered_url) == 0 or entered_url is None:
+            logger.warning(f" No URL has been entered!")
+            # log the commands
+            log_output.configure(state="normal")  # allow editing of the log
+            log_output.insert(tk.END, f"\n No URL has been entered!")
+            log_output.insert(tk.END, f"\n")
+            # Always scroll to the index: "end"
+            log_output.see(tk.END)
+            log_output.configure(state="disabled")  # disable editing of the log
+            return
+
         # strip any potential extra pieces to properly call flightaware_getter
         entered_url = entered_url.replace("https://flightaware.com", "")
         entered_url = entered_url.replace("flightaware.com", "")
@@ -1114,6 +1143,12 @@ def main():
         log_output.see(tk.END)
         log_output.configure(state="disabled")  # disable editing of the log
 
+    def midwest_state_acronyms():
+        """
+        Enter Midwestern state acronyms into the state plotter text box
+        """
+        states_text.insert("1.0", "MO, KS, IA, MN, IL, WI, NE")
+
     # define the row where the main buttons are
     bot_button_row = 4
 
@@ -1180,16 +1215,6 @@ def main():
         row=bot_button_row,
         sticky="E")
 
-    # BUTTON: Create local graph
-    aircraft_button = ttk.Button(
-        root,
-        text="Create local graph",
-        command=lambda: graph_aircraft())
-    aircraft_button.grid(
-        column=3,
-        row=bot_button_row,
-        pady=10)
-
     # BUTTON: Clear log
     clear_log_button = ttk.Button(
         root,
@@ -1246,6 +1271,33 @@ def main():
         sticky="E",
         pady=15)
 
+    # TEXT : States text input
+    states_text = tk.Text(root, height=2, width=60)
+    states_text.grid(
+        column=2,
+        row=6,
+        rowspan=1,
+        columnspan=2)
+
+    # BUTTON: Create local graph
+    aircraft_button = ttk.Button(
+        root,
+        text="Create local graph",
+        command=lambda: graph_aircraft())
+    aircraft_button.grid(
+        column=1,
+        row=6,
+        sticky="E",
+        pady=15)
+
+    # BUTTON: Enter midwestern states in local graph text box
+    midwest_button = ttk.Button(
+        root,
+        text="Midwest States",
+        command=lambda: midwest_state_acronyms())
+    midwest_button.grid(
+        column=2,
+        row=7)
 
     # Execute
     root.mainloop()
