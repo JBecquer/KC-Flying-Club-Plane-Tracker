@@ -265,7 +265,9 @@ def flightaware_history(aircraft):
 def flightaware_getter(url):
     """
     Web scraping to grab track data from flight aware and save to pandas dataframe
-    :param url: The url extracted from MySQL flight_history table, where the track data is stored on flight aware
+    :param url: The url extracted from MySQL flight_history table, EXCLUDING flightaware.com and /track
+    example: https://flightaware.com/live/flight/N81673/history/20220715/1927Z/KLXT/KAMW/tracklog
+    should be given as: live/flight/N81673/history/20220715/1927Z/KLXT/KAMW
     :return: Panda dataframe containing [time, lat, long, kts, altitude]
     """
 
@@ -994,7 +996,7 @@ def main():
         # log the commands
         log_output.configure(state="normal")  # allow editing of the log
         log_output.insert(tk.END,
-                          f" A local graph with the following aircraft has been created:\n {sel_aircraft_str}")
+                          f" \nA local graph with the following aircraft has been created:\n {sel_aircraft_str}")
         log_output.insert(tk.END, f"\n\n")
         # Always scroll to the index: "end"
         log_output.see(tk.END)
@@ -1015,6 +1017,101 @@ def main():
     def clear_log():
         log_output.configure(state="normal")  # allow editing of the log
         log_output.delete("1.0", tk.END)
+        log_output.configure(state="disabled")  # disable editing of the log
+
+    def url_data_getter():
+        """
+        Single-use URL grabber to allow specific flights to be added to the database
+        """
+        check_pw()
+        # get the data entered in url_text
+        entered_url = url_text.get("1.0", "end")
+        # strip any potential extra pieces to properly call flightaware_getter
+        entered_url = entered_url.replace("https://flightaware.com", "")
+        entered_url = entered_url.replace("flightaware.com", "")
+        entered_url = entered_url.replace("/tracklog", "")
+
+        # get the data needed for the history table: date, route, dept_time using the entered url
+        split_url = entered_url.split("/")
+        db_name = split_url[3]
+        date = split_url[5]
+        time = split_url[6]
+        time = time[0:2] + "_" + time[2:4]
+        route = split_url[7] + "_" + split_url[8]
+        route = route[0:-1]
+        date = date[0:4] + "-" + date[4:6] + "-" + date[6:8]
+
+        new_hist = [date, route, time, entered_url[:-1]]
+        # convert from list to df to easier save to MySQL
+        new_hist_df = pd.DataFrame([new_hist], columns=["date", "route", "dept_time", "url"])
+
+        # Create SQLAlchemy engine to connect to MySQL Database
+        user = "root"
+        passwd = pw
+        database = db_name
+        host_ip = '127.0.0.1'
+        port = "3306"
+        engine = create_engine(
+            'mysql+mysqlconnector://' + user + ':' + passwd + '@' + host_ip + ':' + port + '/' + database,
+            echo=False)
+        try:
+            # Convert dataframe to sql table (flight_history)
+            new_hist_df.to_sql('flight_history', engine, if_exists="append", index=False)
+        except Exception as e:
+            logger.critical(" An error occurred with the SQLAclhemy engine! (db_data_saver)")
+            logger.critical(f" Error: {e}")
+            sys.exit(e)
+
+        # make table name
+        date = date.replace("-", "_")
+        hour = time[0:2:]
+        table_name = date + "__" + route.lower() + "__" + hour
+
+        # create new MySQL table and populate with data
+        try:
+            # Init connection to MySQL database
+            db = mysql.connector.connect(
+                host="localhost",
+                user="root",
+                passwd=pw,
+                database=db_name)
+            logger.info(f" Database connection to {db_name} successful.")
+        except Exception as e:
+            logger.critical(f" {db_name} database connection failed! (mysql_connect)")
+            sys.exit(e)
+        mycursor = db.cursor()
+
+        # Build new flight details tables
+        try:
+            # Create a flight details CHILD table
+            mycursor.execute(f"CREATE TABLE {table_name}("
+                             "time MEDIUMINT(10), "
+                             "latitude FLOAT, "
+                             "longitude FLOAT, "
+                             "knots MEDIUMINT(5), "
+                             "altitude MEDIUMINT(5))")
+        except Exception as e:
+            logger.warning(f" Error while attempting to create table {table_name}")
+            logger.warning(e)
+
+        # get the flight details
+        details_df = flightaware_getter(entered_url)
+        try:
+            # Convert dataframe to sql table (flight details)
+            details_df.to_sql(table_name, engine, if_exists="replace", index=False)
+        except Exception as e:
+            logger.warning(f" An error occurred while trying to populate the flight data tables! (db_data_saver)")
+            logger.warning(f" Error: {e}")
+
+        logger.info(f" Table built successfully!")
+        db.close()
+
+        # log the commands
+        log_output.configure(state="normal")  # allow editing of the log
+        log_output.insert(tk.END, f"\n {entered_url} has been successfully uploaded to the DB!")
+        log_output.insert(tk.END, f"\n")
+        # Always scroll to the index: "end"
+        log_output.see(tk.END)
         log_output.configure(state="disabled")  # disable editing of the log
 
     # define the row where the main buttons are
@@ -1129,6 +1226,26 @@ def main():
         padx=25)
     # Disable editing of the output log. state="normal" will have to be called prior to every edit
     log_output.configure(state="disabled")
+
+    # TEXT : URL txt input
+    url_text = tk.Text(root, height=2, width=60)
+    url_text.grid(
+        column=2,
+        row=5,
+        rowspan=1,
+        columnspan=2)
+
+    # BUTTON: Get data from URL
+    url_button = ttk.Button(
+        root,
+        text="Grab URL data",
+        command=lambda: url_data_getter())
+    url_button.grid(
+        column=1,
+        row=5,
+        sticky="E",
+        pady=15)
+
 
     # Execute
     root.mainloop()
