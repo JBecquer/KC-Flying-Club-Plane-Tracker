@@ -526,13 +526,17 @@ def db_data_getter(aircraft, month):
         "November": 11,
         "December": 12}
 
-    # convert the month to a number
-    month = month_dates[month]
+    # convert the month to a number, if not all selected
+    if month != "All":
+        month = month_dates[month]
 
     # Use the flight history table
     try:
-        mycursor.execute(f"SELECT * FROM flight_history "
-                         f"WHERE month(date)={month}")
+        if month != "All":
+            mycursor.execute(f"SELECT * FROM flight_history "
+                             f"WHERE month(date)={month}")
+        else:
+            mycursor.execute(f"SELECT * FROM flight_history")
         hist = []
         for x in mycursor:
             # convert DATE format to string with underscores to allow to be used as table name
@@ -767,7 +771,10 @@ def local_area_map(fleet, area, month):
 
     # finally, plot
     plt.legend(loc="upper right")
-    plt.title(f"{month} flight history")
+    if month != "All":
+        plt.title(f"{month} flight history")
+    else:
+        plt.title(f"2022 flight history")
     plt.show()
     pass
 
@@ -1202,7 +1209,7 @@ def main():
     # prevent typing a value
     month_cb["state"] = "readonly"
     # set values
-    month_cb["values"] = ["January", "February", "March", "April", "May", "June", "July", "August", "September",
+    month_cb["values"] = ["All", "January", "February", "March", "April", "May", "June", "July", "August", "September",
                           "October", "November", "December"]
     month_cb.grid(
         column=0,
