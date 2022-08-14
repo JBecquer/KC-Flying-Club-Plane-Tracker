@@ -511,6 +511,24 @@ def db_data_getter(aircraft, month):
         'mysql+mysqlconnector://' + user + ':' + passwd + '@' + host_ip + ':' + port + '/' + database,
         echo=False)
 
+    # convert month string format to number (January -> 1)
+    month_dates = {
+        "January": 1,
+        "February": 2,
+        "March": 3,
+        "April": 4,
+        "May": 5,
+        "June": 6,
+        "July": 7,
+        "August": 8,
+        "September": 9,
+        "October": 10,
+        "November": 11,
+        "December": 12}
+
+    # convert the month to a number
+    month = month_dates[month]
+
     # Use the flight history table
     try:
         mycursor.execute(f"SELECT * FROM flight_history "
@@ -678,8 +696,11 @@ def local_area_map(fleet, area, month):
     # TODO ADD DOCSTRING
     """
 
-    # Define the map # todo add new text box and get() states.
+    # Define the map
     ax = state_plotter(area, us_map=False)
+    # hide the x and y axis labels
+    ax.get_xaxis().set_visible(False)
+    ax.get_yaxis().set_visible(False)
 
     # N81673 Archer
     if "N81673" in fleet:
@@ -708,7 +729,7 @@ def local_area_map(fleet, area, month):
             gdf_N20389 = GeoDataFrame(df_N20389, geometry=geom_N20389)
             gdf_N20389.plot(ax=ax, color="green", markersize=5, label="C172 - N20389")
 
-    # N182WK C182 (LXT)  # TODO UPDATE THESE CALL CONDITIONS TO INCLUDE NO FLIGHT HISTORY (ex: no flights in August)
+    # N182WK C182 (LXT)
     if "N182WK" in fleet:
         df_N182WK = db_data_getter("N182WK", month)
         # Catch condition where there are is no flight history
@@ -746,6 +767,7 @@ def local_area_map(fleet, area, month):
 
     # finally, plot
     plt.legend(loc="upper right")
+    plt.title(f"{month} flight history")
     plt.show()
     pass
 
@@ -1024,25 +1046,8 @@ def main():
         except Exception as e:
             logger.warning(f" Something went wrong with graph_aircraft, splitting of the states.")
 
-        month_dates = {
-            "January": 1,
-            "February": 2,
-            "March": 3,
-            "April": 4,
-            "May": 5,
-            "June": 6,
-            "July": 7,
-            "August": 8,
-            "September": 9,
-            "October": 10,
-            "November": 11,
-            "December": 12}
-
         # get the current month from the month combobox
         sel_month = month_cb.get()
-
-        # convert the month to a number
-        sel_month = month_dates[sel_month]
 
         # call the grapher
         local_area_map(sel_aircraft, states_area, sel_month)
@@ -1057,7 +1062,7 @@ def main():
         log_output.configure(state="disabled")  # disable editing of the log
 
     def calculate_stats_placeholder():
-        # TODO placeholder until calculate_stats is scrabbed
+        # TODO placeholder until calculate_stats is scrubbed
         check_pw()
 
         # log the commands
