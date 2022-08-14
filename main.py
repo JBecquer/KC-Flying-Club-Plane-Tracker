@@ -491,7 +491,7 @@ def db_data_saver(aircraft):
     db.close()
 
 
-def db_data_getter(aircraft):
+def db_data_getter(aircraft, month):
     """
     Import the data from MySQL and convert into pandas dataframe
     :return: pandas dataframe
@@ -511,8 +511,10 @@ def db_data_getter(aircraft):
         'mysql+mysqlconnector://' + user + ':' + passwd + '@' + host_ip + ':' + port + '/' + database,
         echo=False)
 
+    # Use the flight history table
     try:
-        mycursor.execute("SELECT * FROM flight_history")
+        mycursor.execute(f"SELECT * FROM flight_history "
+                         f"WHERE month(date)={month}")
         hist = []
         for x in mycursor:
             # convert DATE format to string with underscores to allow to be used as table name
@@ -530,6 +532,7 @@ def db_data_getter(aircraft):
     # Defining of the dataframe
     total_df = pd.DataFrame()
 
+    # for each piece of history, get the flight data
     try:
         for leg in hist:
             query = f"SELECT * FROM {leg}"
@@ -666,11 +669,11 @@ def state_plotter(states, us_map=True):
 
     elif not us_map:
         for n in states:
-            usa[usa.STATE_ABBR == f"{n}"].plot(ax=ax, edgecolor="y", linewidth=2)
+            usa[usa.STATE_ABBR == f"{n}"].plot(ax=ax, edgecolor="y", linewidth=2, alpha=0.3, linestyle="--")
     return ax
 
 
-def local_area_map(fleet, area):
+def local_area_map(fleet, area, month):
     """Use the lat/long data to plot a composite map of the KC area
     # TODO ADD DOCSTRING
     """
@@ -680,52 +683,66 @@ def local_area_map(fleet, area):
 
     # N81673 Archer
     if "N81673" in fleet:
-        df_N81673 = db_data_getter("N81673")
-        geom_N81673 = [Point(xy) for xy in zip(df_N81673["longitude"].astype(float), df_N81673["latitude"].astype(float))]
-        gdf_N81673 = GeoDataFrame(df_N81673, geometry=geom_N81673)
-        gdf_N81673.plot(ax=ax, color="red", markersize=5, label="Archer - N81673")
+        df_N81673 = db_data_getter("N81673", month)
+        # Catch condition where there are is no flight history
+        if not df_N81673.empty:
+            geom_N81673 = [Point(xy) for xy in zip(df_N81673["longitude"].astype(float), df_N81673["latitude"].astype(float))]
+            gdf_N81673 = GeoDataFrame(df_N81673, geometry=geom_N81673)
+            gdf_N81673.plot(ax=ax, color="red", markersize=5, label="Archer - N81673", linestyle="-")
 
     # N3892Q C172 (OJC)
     if "N3892Q" in fleet:
-        df_N3892Q = db_data_getter("N3892Q")
-        geom_N3892Q = [Point(xy) for xy in zip(df_N3892Q["longitude"].astype(float), df_N3892Q["latitude"].astype(float))]
-        gdf_N3892Q = GeoDataFrame(df_N3892Q, geometry=geom_N3892Q)
-        gdf_N3892Q.plot(ax=ax, color="blue", markersize=5, label="C172 - N3892Q")
+        df_N3892Q = db_data_getter("N3892Q", month)
+        # Catch condition where there are is no flight history
+        if not df_N3892Q.empty:
+            geom_N3892Q = [Point(xy) for xy in zip(df_N3892Q["longitude"].astype(float), df_N3892Q["latitude"].astype(float))]
+            gdf_N3892Q = GeoDataFrame(df_N3892Q, geometry=geom_N3892Q)
+            gdf_N3892Q.plot(ax=ax, color="blue", markersize=5, label="C172 - N3892Q")
 
     # N20389 C172 (OJC)
     if "N20389" in fleet:
-        df_N20389 = db_data_getter("N20389")
-        geom_N20389 = [Point(xy) for xy in zip(df_N20389["longitude"].astype(float), df_N20389["latitude"].astype(float))]
-        gdf_N20389 = GeoDataFrame(df_N20389, geometry=geom_N20389)
-        gdf_N20389.plot(ax=ax, color="green", markersize=5, label="C172 - N20389")
+        df_N20389 = db_data_getter("N20389", month)
+        # Catch condition where there are is no flight history
+        if not df_N20389.empty:
+            geom_N20389 = [Point(xy) for xy in zip(df_N20389["longitude"].astype(float), df_N20389["latitude"].astype(float))]
+            gdf_N20389 = GeoDataFrame(df_N20389, geometry=geom_N20389)
+            gdf_N20389.plot(ax=ax, color="green", markersize=5, label="C172 - N20389")
 
     # N182WK C182 (LXT)  # TODO UPDATE THESE CALL CONDITIONS TO INCLUDE NO FLIGHT HISTORY (ex: no flights in August)
     if "N182WK" in fleet:
-        df_N182WK = db_data_getter("N182WK")
-        geom_N182WK = [Point(xy) for xy in zip(df_N182WK["longitude"].astype(float), df_N182WK["latitude"].astype(float))]
-        gdf_N182WK = GeoDataFrame(df_N182WK, geometry=geom_N182WK)
-        gdf_N182WK.plot(ax=ax, color="cyan", markersize=5, label="C182 - N182WK")
+        df_N182WK = db_data_getter("N182WK", month)
+        # Catch condition where there are is no flight history
+        if not df_N182WK.empty:
+            geom_N182WK = [Point(xy) for xy in zip(df_N182WK["longitude"].astype(float), df_N182WK["latitude"].astype(float))]
+            gdf_N182WK = GeoDataFrame(df_N182WK, geometry=geom_N182WK)
+            gdf_N182WK.plot(ax=ax, color="cyan", markersize=5, label="C182 - N182WK")
 
     # N58843 C182 (LXT)
     if "N58843" in fleet:
-        df_N58843 = db_data_getter("N58843")
-        geom_N58843 = [Point(xy) for xy in zip(df_N58843["longitude"].astype(float), df_N58843["latitude"].astype(float))]
-        gdf_N58843 = GeoDataFrame(df_N58843, geometry=geom_N58843)
-        gdf_N58843.plot(ax=ax, color="white", markersize=5, label="C182 - N58843")
+        df_N58843 = db_data_getter("N58843", month)
+        # Catch condition where there are is no flight history
+        if not df_N58843.empty:
+            geom_N58843 = [Point(xy) for xy in zip(df_N58843["longitude"].astype(float), df_N58843["latitude"].astype(float))]
+            gdf_N58843 = GeoDataFrame(df_N58843, geometry=geom_N58843)
+            gdf_N58843.plot(ax=ax, color="white", markersize=5, label="C182 - N58843")
 
     # N82145 Saratoga
     if "N82145" in fleet:
-        df_N82145 = db_data_getter("N82145")
-        geom_N82145 = [Point(xy) for xy in zip(df_N82145["longitude"].astype(float), df_N82145["latitude"].astype(float))]
-        gdf_N82145 = GeoDataFrame(df_N82145, geometry=geom_N82145)
-        gdf_N82145.plot(ax=ax, color="black", markersize=5, label="Saratoga - N82145")
+        df_N82145 = db_data_getter("N82145", month)
+        # Catch condition where there are is no flight history
+        if not df_N82145.empty:
+            geom_N82145 = [Point(xy) for xy in zip(df_N82145["longitude"].astype(float), df_N82145["latitude"].astype(float))]
+            gdf_N82145 = GeoDataFrame(df_N82145, geometry=geom_N82145)
+            gdf_N82145.plot(ax=ax, color="black", markersize=5, label="Saratoga - N82145")
 
     # N4803P Debonair
     if "N4803P" in fleet:
-        df_N4803P = db_data_getter("N4803P")
-        geom_N4803P = [Point(xy) for xy in zip(df_N4803P["longitude"].astype(float), df_N4803P["latitude"].astype(float))]
-        gdf_N4803P = GeoDataFrame(df_N4803P, geometry=geom_N4803P)
-        gdf_N4803P.plot(ax=ax, color="magenta", markersize=5, label="Debonair - N4803P")
+        df_N4803P = db_data_getter("N4803P", month)
+        # Catch condition where there are is no flight history
+        if not df_N4803P.empty:
+            geom_N4803P = [Point(xy) for xy in zip(df_N4803P["longitude"].astype(float), df_N4803P["latitude"].astype(float))]
+            gdf_N4803P = GeoDataFrame(df_N4803P, geometry=geom_N4803P)
+            gdf_N4803P.plot(ax=ax, color="magenta", markersize=5, label="Debonair - N4803P")
 
     # finally, plot
     plt.legend(loc="upper right")
@@ -1007,7 +1024,28 @@ def main():
         except Exception as e:
             logger.warning(f" Something went wrong with graph_aircraft, splitting of the states.")
 
-        local_area_map(sel_aircraft, states_area)
+        month_dates = {
+            "January": 1,
+            "February": 2,
+            "March": 3,
+            "April": 4,
+            "May": 5,
+            "June": 6,
+            "July": 7,
+            "August": 8,
+            "September": 9,
+            "October": 10,
+            "November": 11,
+            "December": 12}
+
+        # get the current month from the month combobox
+        sel_month = month_cb.get()
+
+        # convert the month to a number
+        sel_month = month_dates[sel_month]
+
+        # call the grapher
+        local_area_map(sel_aircraft, states_area, sel_month)
 
         # log the commands
         log_output.configure(state="normal")  # allow editing of the log
@@ -1039,12 +1077,11 @@ def main():
         """
         Single-use URL grabber to allow specific flights to be added to the database
         """
-        check_pw()
         # get the data entered in url_text
         entered_url = url_text.get("1.0", "end")
-
+        # TODO ADD CHECK FOR INVALID URL
         # Catch no URL error condition
-        if len(entered_url) == 0 or entered_url is None:
+        if len(entered_url) == 1:
             logger.warning(f" No URL has been entered!")
             # log the commands
             log_output.configure(state="normal")  # allow editing of the log
@@ -1074,6 +1111,8 @@ def main():
         # convert from list to df to easier save to MySQL
         new_hist_df = pd.DataFrame([new_hist], columns=["date", "route", "dept_time", "url"])
 
+       # Check if password exists
+        check_pw()
         # Create SQLAlchemy engine to connect to MySQL Database
         user = "root"
         passwd = pw
