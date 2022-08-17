@@ -8,7 +8,6 @@ Author: Jordan Becquer
 import sys
 from math import radians, cos, sin, asin, sqrt
 import mysql.connector
-from getpass import getpass
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
@@ -24,7 +23,6 @@ from tkinter.scrolledtext import ScrolledText
 from time import sleep
 from datetime import datetime
 
-
 # create logger (copied from https://docs.python.org/3/howto/logging.html#logging-advanced-tutorial)
 # logging.basicConfig(filename="logname.txt",
 #                     filemode="w+",
@@ -32,11 +30,11 @@ from datetime import datetime
 #                     level=logging.DEBUG)
 
 logger = logging.getLogger('Main')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 # create console handler and set level to debug
 ch = logging.StreamHandler()
-ch.setLevel(logging.DEBUG)
+ch.setLevel(logging.INFO)
 # create formatter
 formatter = logging.Formatter('%(levelname)s - %(message)s')
 # add formatter to ch
@@ -60,18 +58,18 @@ def mysql_connect(aircraft):
             passwd=pw,
             database=aircraft
         )
-        logger.info(f" Database connection to {aircraft} successful.")
+        logger.debug(f" Database connection to {aircraft} successful.")
         return db
     except Exception as e:
         logger.critical(f" {aircraft} database connection failed! (mysql_connect)")
         sys.exit(e)
 
-        
+
 def between_parentheses(s):
     """
     Take in a string and return what is in-between the parentheses.  # TODO CREATE ERROR CONDITIONS
-    :param s: string containing closed parantheses.
-    :return: string contained between the parantheses.
+    :param s: string containing closed parentheses.
+    :return: string contained between the parentheses.
     """
     res = []
     # Extracting from: Flight Track Log ✈ N81673 22-Jul-2022 (MO3-KOJC) - FlightAware
@@ -272,7 +270,7 @@ def flightaware_getter(url):
     """
 
     # Make a GET request to flightaware
-    url = "https://flightaware.com"+f"{url}"+"/tracklog"
+    url = "https://flightaware.com" + f"{url}" + "/tracklog"
     logger.info(f" Getting track data from URL: {url}")
     r = requests.get(url, timeout=5)
     # Check the status code
@@ -293,6 +291,7 @@ def flightaware_getter(url):
             raise Exception(f" Table class \"prettyTable fullWidth\" not found! {url}")
     except Exception as e:
         logger.critical(f" Error finding table on FlightAware! (flightaware_getter)")
+        logger.critical(f" Error: {e}")
         logger.critical(f" Attempting to continue...")
         return
 
@@ -357,6 +356,8 @@ def db_data_saver(aircraft):
     # catch edge case in flightaware_history, where no flight data exists from the past 14 days. Func will return None
     if hist_df is None:
         return
+
+    logger.debug(f" Size of the hist_df dataframe: {hist_df.size}")
 
     # Establish connection with MySQL and initialize the cursor
     db = mysql_connect(aircraft)
@@ -474,12 +475,14 @@ def db_data_saver(aircraft):
     for i in range(len(new_flights)):
         try:
             details_df = flightaware_getter(new_flights[i])
+            logger.debug(f" The size of the details_df is: {details_df}")
             if details_df is None:
+                logger.critical(f" details_df is empty!")
                 continue
             # Convert dataframe to sql table (flight details)
             details_df.to_sql(name[i].lower(), engine, if_exists="replace", index=False)
-            logger.info(f" {i+1} out of {len(new_flights)} completed!")
-            if i != len(new_flights)-1:
+            logger.info(f" {i + 1} out of {len(new_flights)} completed!")
+            if i != len(new_flights) - 1:
                 logger.info(" Waiting 3 seconds...")
                 sleep(3)
         except Exception as e:
@@ -569,17 +572,16 @@ def db_data_getter(aircraft, month):
     return total_df
 
 
-def calculate_stats(aircraft):  # TODO UPDATE WITH NEW TABLE NAMES
+def calculate_stats(fleet, month):
     """ Calculate various stats related to the aircraft's history"""
-    # Establish connection with MySQL:
-    db = mysql_connect(aircraft)
 
-    def dist_travelled():
+    def dist_travelled(data_df):
         """
         Calculate the total distance travelled by the aircraft using lat/long data.
         :return: Total distance travelled in miles
         :rtype: float(2)
         """
+
         def lat_long_dist(lat1, lat2, lon1, lon2):
             """
             Calculate the distance between 2 sets of lat/long coordinates using the Haversine formula
@@ -609,47 +611,44 @@ def calculate_stats(aircraft):  # TODO UPDATE WITH NEW TABLE NAMES
             # calculate the result
             return c * r
 
-        # initialize the MySQL cursor
-        mycursor = db.cursor()
-
-        # grab the latitude and longitude data from MySQL
-        mycursor.execute("SELECT Latitude, Longitude FROM flight")
-
+        total_dist = 0
         latitude = []
         longitude = []
-        for x in mycursor:
-            latitude.append(x[0])
-            longitude.append(x[1])
-
-        total_dist = 0
-        for x in range(len(latitude[:-1:])):
+        for row in data_df.itertuples(index=False):
+            latitude.append(row.latitude)
+            longitude.append(row.longitude)
+        latitude = [float(x) for x in latitude]
+        longitude = [float(x) for x in longitude]
+        for x in range(len(longitude[:-1:])):
             total_dist += lat_long_dist(latitude[x], latitude[x + 1], longitude[x], longitude[x + 1])
         print(f" The total distance travelled was {round(total_dist, 2)} Miles")
         return total_dist
 
-    def time_aloft():
+    def time_aloft(data_df):
         """
         Calculate the max time aloft by using the aircraft in-air data
         :return: time aloft as a timedelta format
         """
-        # initialize the MySQL cursor
-        mycursor = db.cursor()
+        #  TODO THIS NEEDS TO BE UPDATED TO CALL INDIVIDUAL FLIGHTS THEN HAVE A RUNNING TOTAL OTHERWISE WE CAN
+        #   ADD THE FLIGHTAWARE COLUMN TO OUR DATABASE AND SUM IT THAT WAY
 
-        # grab the latitude and longitude data from MySQL
-        mycursor.execute("SELECT Time FROM flight")
+        # time = []
+        # for row in data_df.itertuples(index=False):
+        #     time.append(row.latitude)
 
-        time = []
-        for x in mycursor:
-            time.append(x)
+        # start_time = time[0]
+        # end_time = time[-1]
 
-        start_time = time[0]
-        end_time = time[-1]
+        start_time, end_time = data_df.time[~data_df.time.isna()].values[[0, -1]]
+        print(start_time)
+        print(end_time)
         time_delta = end_time[0] - start_time[0]
 
         def strfdelta(tdelta, fmt):
             """
             Takes timedelta and returns a format that can be used to print hours and minutes
             :param tdelta: flight time (end time - start time) in timedelta format
+            :param fmt: the return format, shown below
             :return: a format that allows reporting of {hours}, {minutes}, and {seconds}
             """
             d = {"days": tdelta.days}
@@ -660,16 +659,130 @@ def calculate_stats(aircraft):  # TODO UPDATE WITH NEW TABLE NAMES
         print(strfdelta(time_delta, " The trip took {hours} hours and {minutes} minutes"))
         return time_delta
 
-    def airports_visited():
+    def airports_visited(aircraft, month):
         """Determine the airports visited"""
-        pass
+        # Establish connection with MySQL and init cursor
+        db = mysql_connect(aircraft)
+        mycursor = db.cursor()
 
-    # calculate_stats function calls
-    dist_travelled()
-    time_aloft()
-    airports_visited()
+        # convert month string format to number (January -> 1)
+        month_dates = {
+            "January": 1,
+            "February": 2,
+            "March": 3,
+            "April": 4,
+            "May": 5,
+            "June": 6,
+            "July": 7,
+            "August": 8,
+            "September": 9,
+            "October": 10,
+            "November": 11,
+            "December": 12}
 
-    db.close()
+        # convert the month to a number, if not all selected
+        if month != "All":
+            month = month_dates[month]
+
+        try:
+            if month != "All":
+                mycursor.execute(f"SELECT * FROM flight_history "
+                                 f"WHERE month(date)={month}")
+            else:
+                mycursor.execute(f"SELECT * FROM flight_history")
+            hist = []
+            for x in mycursor:
+                # convert DATE format to string with underscores to allow to be used as table name
+                dest = x[1].split("_")[1]
+                hist.append(dest)
+        except Exception as e:
+            db.close()
+            logger.critical(" An error occurred while getting the route history! (airports_visited)")
+            logger.critical(e)
+            sys.exit(e)
+
+        # exit condition if no flight history
+        if not hist or len(hist) == 0:
+            logger.info(f" Possible error condition")
+            return
+
+        # Find the number of unique airports and save to dictionary, count each time the airport occurs
+        landing_hist = {}
+        for airport in hist:
+            if airport not in landing_hist:
+                landing_hist[airport] = 1
+            else:
+                landing_hist[airport] += 1
+
+        # sort the airports list
+        landing_hist = dict(sorted(landing_hist.items(), key=lambda item:item[1], reverse=True))
+        print(f" Trips to the following airports:")
+        print(landing_hist)
+        
+    print(f" ~~~~~~~~~~~~~~~~~ {month} stat line-up ~~~~~~~~~~~~~~~~~")
+
+    # N81673 Archer
+    if "N81673" in fleet:
+        df_N81673 = db_data_getter("N81673", month)
+        # Catch condition where there are is no flight history
+        if not df_N81673.empty:
+            print(f" ~~~~~~~~~~~~~~~~~ Stats for N81673 (Archer) ~~~~~~~~~~~~~~~~~")
+            N81673_dist = dist_travelled(df_N81673)
+            airports_visited("N81673", month)
+
+    # N3892Q C172 (OJC)
+    if "N3892Q" in fleet:
+        df_N3892Q = db_data_getter("N3892Q", month)
+        # Catch condition where there are is no flight history
+        if not df_N3892Q.empty:
+            print(f" ~~~~~~~~~~~~~~~~~ Stats for N3892Q (C172) ~~~~~~~~~~~~~~~~~")
+            N3892Q_dist = dist_travelled(df_N3892Q)
+            airports_visited("N3892Q", month)
+
+    # N20389 C172 (OJC)
+    if "N20389" in fleet:
+        df_N20389 = db_data_getter("N20389", month)
+        # Catch condition where there are is no flight history
+        if not df_N20389.empty:
+            print(f" ~~~~~~~~~~~~~~~~~ Stats for N20389 (C172) ~~~~~~~~~~~~~~~~~")
+            N20389_dist = dist_travelled(df_N20389)
+            airports_visited("N20389", month)
+
+    # N182WK C182 (LXT)
+    if "N182WK" in fleet:
+        df_N182WK = db_data_getter("N182WK", month)
+        # Catch condition where there are is no flight history
+        if not df_N182WK.empty:
+            print(f" ~~~~~~~~~~~~~~~~~ Stats for N182WK (C182) ~~~~~~~~~~~~~~~~~")
+            N182WK_dist = dist_travelled(df_N182WK)
+            airports_visited("N182WK", month)
+
+    # N58843 C182 (OJC)
+    if "N58843" in fleet:
+        df_N58843 = db_data_getter("N58843", month)
+        # Catch condition where there are is no flight history
+        if not df_N58843.empty:
+            print(f" ~~~~~~~~~~~~~~~~~ Stats for N58843 (C182) ~~~~~~~~~~~~~~~~~")
+            N58843_dist = dist_travelled(df_N58843)
+            airports_visited("N58843", month)
+
+    # N82145 Saratoga
+    if "N82145" in fleet:
+        df_N82145 = db_data_getter("N82145", month)
+        # Catch condition where there are is no flight history
+        if not df_N82145.empty:
+            print(f" ~~~~~~~~~~~~~~~~~ Stats for N82145 (Saratoga) ~~~~~~~~~~~~~~~~~")
+            N82145_dist = dist_travelled(df_N82145)
+            airports_visited("N82145", month)
+
+    # N4803P Debonair
+    if "N4803P" in fleet:
+        df_N4803P = db_data_getter("N4803P", month)
+        # Catch condition where there are is no flight history
+        if not df_N4803P.empty:
+            print(f" ~~~~~~~~~~~~~~~~~ Stats for N4803P (Debonair) ~~~~~~~~~~~~~~~~~")
+            N4803P_dist = dist_travelled(df_N4803P)
+            airports_visited("N4803P", month)
 
 
 def state_plotter(states, us_map=True):
@@ -702,7 +815,7 @@ def local_area_map(fleet, area, month):
 
     # Define the map
     ax = state_plotter(area, us_map=False)
-    # hide the x and y axis labels
+    # hide the x and y-axis labels
     ax.get_xaxis().set_visible(False)
     ax.get_yaxis().set_visible(False)
 
@@ -711,16 +824,18 @@ def local_area_map(fleet, area, month):
         df_N81673 = db_data_getter("N81673", month)
         # Catch condition where there are is no flight history
         if not df_N81673.empty:
-            geom_N81673 = [Point(xy) for xy in zip(df_N81673["longitude"].astype(float), df_N81673["latitude"].astype(float))]
+            geom_N81673 = \
+                [Point(xy) for xy in zip(df_N81673["longitude"].astype(float), df_N81673["latitude"].astype(float))]
             gdf_N81673 = GeoDataFrame(df_N81673, geometry=geom_N81673)
-            gdf_N81673.plot(ax=ax, color="red", markersize=5, label="Archer - N81673", linestyle="-")
+            gdf_N81673.plot(ax=ax, color="red", markersize=5, label="Archer - N81673")
 
     # N3892Q C172 (OJC)
     if "N3892Q" in fleet:
         df_N3892Q = db_data_getter("N3892Q", month)
         # Catch condition where there are is no flight history
         if not df_N3892Q.empty:
-            geom_N3892Q = [Point(xy) for xy in zip(df_N3892Q["longitude"].astype(float), df_N3892Q["latitude"].astype(float))]
+            geom_N3892Q = \
+                [Point(xy) for xy in zip(df_N3892Q["longitude"].astype(float), df_N3892Q["latitude"].astype(float))]
             gdf_N3892Q = GeoDataFrame(df_N3892Q, geometry=geom_N3892Q)
             gdf_N3892Q.plot(ax=ax, color="blue", markersize=5, label="C172 - N3892Q")
 
@@ -729,7 +844,8 @@ def local_area_map(fleet, area, month):
         df_N20389 = db_data_getter("N20389", month)
         # Catch condition where there are is no flight history
         if not df_N20389.empty:
-            geom_N20389 = [Point(xy) for xy in zip(df_N20389["longitude"].astype(float), df_N20389["latitude"].astype(float))]
+            geom_N20389 = \
+                [Point(xy) for xy in zip(df_N20389["longitude"].astype(float), df_N20389["latitude"].astype(float))]
             gdf_N20389 = GeoDataFrame(df_N20389, geometry=geom_N20389)
             gdf_N20389.plot(ax=ax, color="green", markersize=5, label="C172 - N20389")
 
@@ -738,7 +854,8 @@ def local_area_map(fleet, area, month):
         df_N182WK = db_data_getter("N182WK", month)
         # Catch condition where there are is no flight history
         if not df_N182WK.empty:
-            geom_N182WK = [Point(xy) for xy in zip(df_N182WK["longitude"].astype(float), df_N182WK["latitude"].astype(float))]
+            geom_N182WK = \
+                [Point(xy) for xy in zip(df_N182WK["longitude"].astype(float), df_N182WK["latitude"].astype(float))]
             gdf_N182WK = GeoDataFrame(df_N182WK, geometry=geom_N182WK)
             gdf_N182WK.plot(ax=ax, color="cyan", markersize=5, label="C182 - N182WK")
 
@@ -747,16 +864,18 @@ def local_area_map(fleet, area, month):
         df_N58843 = db_data_getter("N58843", month)
         # Catch condition where there are is no flight history
         if not df_N58843.empty:
-            geom_N58843 = [Point(xy) for xy in zip(df_N58843["longitude"].astype(float), df_N58843["latitude"].astype(float))]
+            geom_N58843 = \
+                [Point(xy) for xy in zip(df_N58843["longitude"].astype(float), df_N58843["latitude"].astype(float))]
             gdf_N58843 = GeoDataFrame(df_N58843, geometry=geom_N58843)
-            gdf_N58843.plot(ax=ax, color="white", markersize=5, label="C182 - N58843")
+            gdf_N58843.plot(ax=ax, color="grey", markersize=5, label="C182 - N58843")
 
     # N82145 Saratoga
     if "N82145" in fleet:
         df_N82145 = db_data_getter("N82145", month)
         # Catch condition where there are is no flight history
         if not df_N82145.empty:
-            geom_N82145 = [Point(xy) for xy in zip(df_N82145["longitude"].astype(float), df_N82145["latitude"].astype(float))]
+            geom_N82145 = \
+                [Point(xy) for xy in zip(df_N82145["longitude"].astype(float), df_N82145["latitude"].astype(float))]
             gdf_N82145 = GeoDataFrame(df_N82145, geometry=geom_N82145)
             gdf_N82145.plot(ax=ax, color="black", markersize=5, label="Saratoga - N82145")
 
@@ -765,7 +884,8 @@ def local_area_map(fleet, area, month):
         df_N4803P = db_data_getter("N4803P", month)
         # Catch condition where there are is no flight history
         if not df_N4803P.empty:
-            geom_N4803P = [Point(xy) for xy in zip(df_N4803P["longitude"].astype(float), df_N4803P["latitude"].astype(float))]
+            geom_N4803P = \
+                [Point(xy) for xy in zip(df_N4803P["longitude"].astype(float), df_N4803P["latitude"].astype(float))]
             gdf_N4803P = GeoDataFrame(df_N4803P, geometry=geom_N4803P)
             gdf_N4803P.plot(ax=ax, color="magenta", markersize=5, label="Debonair - N4803P")
 
@@ -779,18 +899,13 @@ def local_area_map(fleet, area, month):
     pass
 
 
-def conus_area_map():
-    """Use the lat/long data to plot a composite map of the CONUS"""
-    pass
-
-
 def main():
     """Main entry point for the script."""
 
-    #-------------------------------------------------------------------------------------------------------------------
+    # -------------------------------------------------------------------------------------------------------------------
     #                                                   TKINTER GUI WINDOW
     #                                       Reference https://www.pythontutorial.net/tkinter
-    #-------------------------------------------------------------------------------------------------------------------
+    # -------------------------------------------------------------------------------------------------------------------
 
     # establish root as the main window
     root = tk.Tk()
@@ -921,6 +1036,7 @@ def main():
                 log_output.insert(tk.END, f" Connection successful!\n\n")
             except Exception as e:
                 logger.critical(f" database connection failed! (mysql_dummy)")
+                logger.critical(f" Error: {e}")
                 log_output.insert(tk.END, f" Incorrect password, please try again.\n\n")
             else:
                 connector.destroy()
@@ -996,7 +1112,6 @@ def main():
             column=1,
             row=2)
 
-
         # TODO THREADING
         # Call data gathering
         for aircraft in selected_aircraft:
@@ -1052,6 +1167,7 @@ def main():
                     return
         except Exception as e:
             logger.warning(f" Something went wrong with graph_aircraft, splitting of the states.")
+            logger.warning(f" Error: {e}")
 
         # get the current month from the month combobox
         sel_month = month_cb.get()
@@ -1068,9 +1184,23 @@ def main():
         log_output.see(tk.END)
         log_output.configure(state="disabled")  # disable editing of the log
 
-    def calculate_stats_placeholder():
-        # TODO placeholder until calculate_stats is scrubbed
+    def calculate_stats_tkinter():
         check_pw()
+
+        # get selected indices
+        selected_indices = fleet_listbox.curselection()
+        # get selected items
+        sel_aircraft = [fleet_listbox.get(i) for i in selected_indices]
+        # Remove the excess information from the selectable table data
+        for i, x in enumerate(sel_aircraft):
+            sel_aircraft[i] = x.split("-")[0].strip()
+        if not sel_aircraft:
+            error_none_selected()
+
+        # get the current month from the month combobox
+        sel_month = month_cb.get()
+
+        calculate_stats(sel_aircraft, sel_month)
 
         # log the commands
         log_output.configure(state="normal")  # allow editing of the log
@@ -1123,7 +1253,7 @@ def main():
         # convert from list to df to easier save to MySQL
         new_hist_df = pd.DataFrame([new_hist], columns=["date", "route", "dept_time", "url"])
 
-       # Check if password exists
+        # Check if password exists
         check_pw()
         # Create SQLAlchemy engine to connect to MySQL Database
         user = "root"
@@ -1279,7 +1409,7 @@ def main():
     stats_button = ttk.Button(
         root,
         text="Calculate stats",
-        command=lambda: calculate_stats_placeholder())
+        command=lambda: calculate_stats_tkinter())
     stats_button.grid(
         column=5,
         row=bot_button_row)
