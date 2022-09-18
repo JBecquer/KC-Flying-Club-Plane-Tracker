@@ -479,8 +479,12 @@ def db_data_saver(aircraft):
             if details_df is None:
                 logger.critical(f" details_df is empty!")
                 continue
+            # get the table name using the flightaware_combined_hist,
+            # by searching the dictionary with the URL (new_flights[i])
+            table_name = [z for z in flightaware_combined_hist if flightaware_combined_hist[z] == new_flights[i]]
+            table_name = str(table_name[0])
             # Convert dataframe to sql table (flight details)
-            details_df.to_sql(name[i].lower(), engine, if_exists="replace", index=False)
+            details_df.to_sql(table_name.lower(), engine, if_exists="replace", index=False)
             logger.info(f" {i + 1} out of {len(new_flights)} completed!")
             if i != len(new_flights) - 1:
                 logger.info(" Waiting 3 seconds...")
