@@ -7,6 +7,8 @@ Author: Jordan Becquer
 
 import sys
 from math import radians, cos, sin, asin, sqrt
+
+import geopandas
 import mysql.connector
 import requests
 from bs4 import BeautifulSoup
@@ -811,6 +813,158 @@ def state_plotter(states, us_map=True):
             usa[usa.STATE_ABBR == f"{n}"].plot(ax=ax, edgecolor="y", linewidth=2, alpha=0.3, linestyle="--")
     return ax
 
+def airport_coordinates(airport):
+    """
+    Get the airport code from mySQL. If not available from mySQL, scrape airnav.com and save those coordinates to mySQL
+    for future use.
+    :param airport: ICAO airport code
+    :return: set of lat/long coordinates
+    """
+    # Establish connection with MySQL and init cursor
+    db = mysql_connect("airport_coords")
+    mycursor = db.cursor()
+
+    # Create SQLAlchemy engine to connect to MySQL Database
+    user = "root"
+    passwd = pw
+    database = "airport_coords"
+    host_ip = '127.0.0.1'
+    port = "3306"
+
+    engine = create_engine(
+        'mysql+mysqlconnector://' + user + ':' + passwd + '@' + host_ip + ':' + port + '/' + database,
+        echo=False)
+
+    # Create coordinates table
+    mycursor.execute("CREATE TABLE IF NOT EXISTS coords("
+                     "latitude FLOAT(9,4), "
+                     "longitude FLOAT(9,4), "
+                     "airport VARCHAR(15))")
+
+    mycursor.execute(f"SELECT * FROM coords")
+
+    # Get the list of airports that already have coordinates defined in the database
+    existing_airport = []
+    for x in mycursor:
+        stepper = str(x[2])
+        existing_airport.append(stepper)
+
+    if airport in existing_airport:
+        # if the airport is already in the database, return in format: lat, long, airport code
+        mycursor.execute(f"SELECT * FROM coords WHERE airport = \"{airport}\"")
+        for results in mycursor:
+            return results
+
+    else:
+        # else scrape airnav.com to find the lat long data
+        # Make a GET request to flightaware
+        url = "https://airnav.com/airport/" + f"{airport}"
+        logger.info(f" Getting GPS coordinate data from URL: {url}")
+        r = requests.get(url, timeout=5)
+        # Check the status code
+        if r.status_code != 200:
+            logger.critical(f" Failed to connect to Airnav.com! (airport_coordinates)")
+            logger.critical(f" status code: {r.status_code}")
+            sys.exit(r.status_code)
+
+        # Parse the HTML
+        soup = BeautifulSoup(r.text, "html.parser")
+        # ------------------------------------------------------------------------------------------------------------------
+        #   Extract table data
+        # ------------------------------------------------------------------------------------------------------------------
+        # find the latitude and longitude coordinates provided on airnav.com
+        try:
+            s = soup.findAll("table")
+            raw_coords = s[6]
+            rows = raw_coords.find_all("tr")
+            column = rows[2].find_all("td")
+            column = str(column).split("<br/>")
+            column = column[2].split(",")
+            lat = column[0]
+            long = column[1]
+        except Exception as e:
+            logger.critical(f" Error finding information on Airnav.com! (airport_coordinates)")
+            logger.critical(f" Error: {e}")
+            sys.exit()
+
+        # Save the newfound lat/long coordinates in mySQL, first saving it as a pandas DF
+        # build a row to be exported to pandas
+        res = [lat, long, airport]
+        # build pandas
+        airport_df = pd.DataFrame([res], columns=["latitude", "longitude", "airport"])
+
+        try:
+            # Convert dataframe to sql table (airport_coordinates)
+            airport_df.to_sql('coords', engine, if_exists="append", index=False)
+        except Exception as e:
+            logger.critical(" An error occurred with the SQLAclhemy engine! (airport_coordinates)")
+            logger.critical(f" Error: {e}")
+            sys.exit(e)
+
+    # finally, return the airport information
+    return res
+
+def airports_plotter(aircraft, month):
+    """Determine the airports visited specifically to be used for plotting in Geopandas"""
+    # Establish connection with MySQL and init cursor
+    db = mysql_connect(aircraft)
+    mycursor = db.cursor()
+
+    # convert month string format to number (January -> 1)
+    month_dates = {
+        "January": 1,
+        "February": 2,
+        "March": 3,
+        "April": 4,
+        "May": 5,
+        "June": 6,
+        "July": 7,
+        "August": 8,
+        "September": 9,
+        "October": 10,
+        "November": 11,
+        "December": 12}
+
+    # convert the month to a number, if not all selected
+    if month != "All":
+        month = month_dates[month]
+
+    try:
+        if month != "All":
+            mycursor.execute(f"SELECT * FROM flight_history "
+                             f"WHERE month(date)={month}")
+        else:
+            mycursor.execute(f"SELECT * FROM flight_history")
+        hist = []
+        for x in mycursor:
+            # convert DATE format to string with underscores to allow to be used as table name
+            dest = x[1].split("_")[1]
+            hist.append(dest)
+    except Exception as e:
+        db.close()
+        logger.critical(" An error occurred while getting the route history! (airports_visited)")
+        logger.critical(e)
+        sys.exit(e)
+
+    # exit condition if no flight history
+    if not hist or len(hist) == 0:
+        logger.info(f" Possible error condition")
+        return
+
+    # Find the number of unique airports and save to dictionary, count each time the airport occurs
+    landing_hist = {}
+    for airport in hist:
+        if airport not in landing_hist:
+            landing_hist[airport] = 1
+        else:
+            landing_hist[airport] += 1
+
+    # sort the airports list
+    landing_hist = dict(sorted(landing_hist.items(), key=lambda item:item[1], reverse=True))
+    # extract only the keys of the dictionary
+    landing_hist_list = list(landing_hist.keys())
+    return landing_hist_list
+
 
 def local_area_map(fleet, area, month):
     """Use the lat/long data to plot a composite map of the KC area
@@ -876,22 +1030,52 @@ def local_area_map(fleet, area, month):
     # N82145 Saratoga
     if "N82145" in fleet:
         df_N82145 = db_data_getter("N82145", month)
+        airports_N82145 = airports_plotter("N82145", month)
         # Catch condition where there are is no flight history
         if not df_N82145.empty:
             geom_N82145 = \
                 [Point(xy) for xy in zip(df_N82145["longitude"].astype(float), df_N82145["latitude"].astype(float))]
             gdf_N82145 = GeoDataFrame(df_N82145, geometry=geom_N82145)
             gdf_N82145.plot(ax=ax, color="black", markersize=5, label="Saratoga - N82145")
+    else:
+        # Create an empty list to allow for the airports plotter to combine all lists correctly
+        airports_N82145 = []
 
     # N4803P Debonair
     if "N4803P" in fleet:
         df_N4803P = db_data_getter("N4803P", month)
+        airports_N4803P = airports_plotter("N4803P", month)
         # Catch condition where there are is no flight history
         if not df_N4803P.empty:
             geom_N4803P = \
                 [Point(xy) for xy in zip(df_N4803P["longitude"].astype(float), df_N4803P["latitude"].astype(float))]
             gdf_N4803P = GeoDataFrame(df_N4803P, geometry=geom_N4803P)
             gdf_N4803P.plot(ax=ax, color="magenta", markersize=5, label="Debonair - N4803P")
+    else:
+        # Create an empty list to allow for the airports plotter to combine all lists correctly
+        airports_N4803P = []
+
+    # Combined all the airport data, save only the unique values
+    airports_fleet = list(set(airports_N82145 + airports_N4803P))
+    # Remove UNKW from list
+    if "UNKW" in airports_fleet:
+        airports_fleet.remove("UNKW")
+
+    # create list of visited airports in a list with format [lat, long, airport code]
+    airport_coords = []
+    for airport in airports_fleet:
+        airport_coords.append(airport_coordinates(airport))
+
+    coord_df = pd.DataFrame(columns=["latitude", "longitude", "airport"])
+
+    for step in airport_coords:
+        coord_df.loc[len(coord_df)] = step
+
+    # create geodataframe of airports
+    airport_gdf = \
+        geopandas.GeoDataFrame(coord_df, geometry=geopandas.points_from_xy(coord_df.longitude, coord_df.latitude))
+    for x, y, label in zip(airport_gdf.geometry.x, airport_gdf.geometry.y, airport_gdf.airport):
+        ax.annotate(label, xy=(x, y), xytext=(3, 3), textcoords="offset points")
 
     # finally, plot
     plt.legend(loc="upper right")
