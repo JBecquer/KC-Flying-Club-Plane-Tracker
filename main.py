@@ -24,6 +24,7 @@ from tkinter import ttk
 from tkinter.scrolledtext import ScrolledText
 from time import sleep
 from datetime import datetime
+from threading import Thread
 
 # create logger (copied from https://docs.python.org/3/howto/logging.html#logging-advanced-tutorial)
 # logging.basicConfig(filename="logname.txt",
@@ -43,6 +44,10 @@ formatter = logging.Formatter('%(levelname)s - %(message)s')
 ch.setFormatter(formatter)
 # add ch to logger
 logger.addHandler(ch)
+
+# Global variables used by function unkw_airport_finder.
+origin_fixed = "UNKW"
+destination_fixed = "UNKW"
 
 
 def mysql_connect(aircraft):
@@ -150,6 +155,322 @@ def convert_date(s):
         sys.exit(" Invalid date code! (convert_date)")
 
 
+def unkw_airport_finder(url):
+    """
+    Determine which airport is the origin/destination airport. Used to handle situations where flightaware gives
+    any response other than the airport identifier (e.g. lat/long coordinates or other misc. code)
+    :rtype: str
+    :return: ICAO airport identifier code. "UNKW" if still unable to determine
+    """
+    # We could try different methods here... most simple would be to open the URL and have the user determine the
+    # airport identifier code manually. Least likely to introduce errors or unneeded complexity
+
+    # Establish new TKinter window
+    finder = tk.Tk()
+    finder.title("UNKW Airport Finder")
+    finder.geometry('390x150+400+400')
+    finder.resizable(False, False)
+
+    # Bring the window to the top of the screen
+    finder.attributes('-topmost', True)
+    finder.update()
+    finder.attributes('-topmost', False)
+
+    # SPACER
+    spacer1 = tk.Label(finder, text="")
+    spacer1.grid(
+        row=0,
+        column=0)
+
+    # LABEL: url copy
+    url_label = ttk.Label(finder, text="Copy the below URL:")
+    url_label.grid(
+        column=1,
+        row=1,
+        columnspan=4,
+        padx=25,
+        sticky="SW")
+
+    # create textbox that contains the flightaware URL
+    # TEXT: URL output
+    url_output = tk.Text(finder, height=1, width=25)
+    url_output.grid(
+        column=1,
+        row=2,
+        columnspan=4,
+        padx=25,
+        sticky="W")
+    url_output.insert(tk.END, "https://flightaware.com" + str(url))
+    # Disable editing of the text.
+    url_output.configure(state="disabled")
+
+    # LABEL: instruction step 2
+    inst_two = ttk.Label(finder, text="Determine the ICAO code of the airport and enter below:")
+    inst_two.grid(
+        column=1,
+        row=3,
+        columnspan=4,
+        padx=25,
+        sticky="W")
+
+    # create second textbox that will allow user to enter airport code
+    # TEXT: ICAO input
+    code_input = tk.Text(finder, height=1, width=25)
+    code_input.grid(
+        column=1,
+        row=4,
+        columnspan=4,
+        padx=25,
+        sticky="W")
+
+    # BUTTON: Done
+    done_button = ttk.Button(
+        finder,
+        text="Done",
+        command=lambda: done_button())
+    done_button.grid(
+        column=2,
+        row=5,
+        pady=5)
+
+    # BUTTON: Skip
+    skip_button = ttk.Button(
+        finder,
+        text="Skip",
+        command=lambda: skip_button())
+    skip_button.grid(
+        column=3,
+        row=5)
+
+    # cancel button
+    # BUTTON: Cancel
+    cancel_button = ttk.Button(
+        finder,
+        text="Cancel",
+        command=lambda: cancel_button())
+    cancel_button.grid(
+        column=4,
+        row=5)
+
+    def done_button():
+        """
+        Confirm whether the entered airport code was correct. Buttons to select confirm or cancel.
+        If confirm: return ICAO code as string
+        If cancel: destroy confirm window
+        :return:
+        """
+        airport_code = code_input.get("1.0", "end")
+
+        # Catch no entry errors
+        if len(airport_code) == 1:
+            error_no_entry()
+        else:
+
+            # Establish new TKinter window
+            done_win = tk.Toplevel()
+            done_win.title("Confirm")
+            done_win.geometry('250x130+450+425')
+            done_win.resizable(False, False)
+
+            # SPACER
+            done_spacer = tk.Label(done_win, text="")
+            done_spacer.grid(
+                row=0,
+                column=0)
+
+            # LABEL: url copy
+            done_code = ttk.Label(done_win, text="Confirm this is the correct airport code: ")
+            done_code.grid(
+                column=1,
+                row=1,
+                columnspan=3,
+                pady=5)
+
+            # LABEL: ICAO code
+            done_code = ttk.Label(done_win, text=airport_code.upper(), font=("Helvetica", 12, "bold"))
+            done_code.grid(
+                column=1,
+                row=2,
+                columnspan=3)
+
+            # BUTTON: Confirm button
+            confirm_but = ttk.Button(
+                done_win,
+                text="Confirm",
+                command=lambda: confirm_code(airport_code))
+            confirm_but.grid(
+                column=1,
+                row=3,
+                padx=10)
+
+            # BUTTON: Try again button
+            try_but = ttk.Button(
+                done_win,
+                text="Try again",
+                command=done_win.destroy)
+            try_but.grid(
+                column=2,
+                row=3)
+
+            def confirm_code(code_in):
+                """
+                Confirmation that the ICAO code is correct, return new airport code to main.
+                Close confirm window and finder window
+                :return: ICAO code
+                :rtype: str
+                """
+                global origin_fixed
+                origin_fixed = code_in
+                done_win.destroy()
+                finder.destroy()
+                finder.quit()
+
+    def skip_button():  # TODO CHANGE THIS TO ACTUALLY SKIP, INSTEAD OF RETURNING UNKW?
+        # Establish new TKinter window
+        skip_win = tk.Toplevel()
+        skip_win.title("Confirm")
+        skip_win.geometry('325x100+450+425')
+        skip_win.resizable(False, False)
+
+        # SPACER
+        skip_spacer = tk.Label(skip_win, text="")
+        skip_spacer.grid(
+            row=0,
+            column=0)
+
+        # LABEL:
+        skip_code = ttk.Label(skip_win, text="Confirm you wish to skip this entry. UNKW will be used. ")
+        skip_code.grid(
+            column=1,
+            row=1,
+            columnspan=3,
+            pady=5)
+
+        # BUTTON: Confirm
+        confirm_but = ttk.Button(
+            skip_win,
+            text="Confirm",
+            command=lambda: confirm_code())
+        confirm_but.grid(
+            column=1,
+            row=3,
+            padx=10)
+
+        # BUTTON: No
+        no_but = ttk.Button(
+            skip_win,
+            text="No",
+            command=skip_win.destroy)
+        no_but.grid(
+            column=2,
+            row=3)
+
+        def confirm_code():
+            """
+            Used when an airport code cannot be determined or simply wishing to skip.
+            :return: UNKW
+            :rtype: str
+            """
+            global origin_fixed
+            origin_fixed = "UNKW"
+            skip_win.destroy()
+            finder.destroy()
+            finder.quit()
+
+    def cancel_button():
+        """
+        Bailout button. Will completely exit the code.
+        """
+        # Establish new TKinter window
+        cancel_win = tk.Toplevel()
+        cancel_win.title("Confirm")
+        cancel_win.geometry('200x100+450+425')
+        cancel_win.resizable(False, False)
+
+        # SPACER
+        cancel_spacer = tk.Label(cancel_win, text="")
+        cancel_spacer.grid(
+            row=0,
+            column=0)
+
+        # LABEL:
+        cancel_text = ttk.Label(cancel_win, text="Confirm you wish to cancel.")
+        cancel_text.grid(
+            column=1,
+            row=1,
+            columnspan=3,
+            pady=2)
+
+        # LABEL:
+        cancel_text2 = ttk.Label(cancel_win, text="This will completely exit the code.")
+        cancel_text2.grid(
+            column=1,
+            row=2,
+            columnspan=3,
+            pady=2)
+
+        # BUTTON: Confirm
+        confirm_but = ttk.Button(
+            cancel_win,
+            text="Confirm",
+            command=lambda: cancel_all())
+        confirm_but.grid(
+            column=1,
+            row=4,
+            padx=10)
+
+        # BUTTON: No
+        no_but = ttk.Button(
+            cancel_win,
+            text="No",
+            command=cancel_win.destroy)
+        no_but.grid(
+            column=2,
+            row=4)
+
+        def cancel_all():
+            """
+            Exit the entire code!
+            """
+            cancel_win.destroy()
+            finder.destroy()
+            sys.exit()
+
+    def error_no_entry():
+        # create message box that contains the error if no aircraft were selected
+        none_select = tk.Toplevel(finder)
+        none_select.title("Error!")
+        none_select.resizable(False, False)
+
+        # Position message box to be coordinated with the root window
+        root_x = finder.winfo_rootx()
+        root_y = finder.winfo_rooty()
+        win_x = root_x + 100
+        win_y = root_y + 25
+        none_select.geometry(f'+{win_x}+{win_y}')
+
+        # create the label on the message box
+        prog_msg = tk.Label(none_select, text=f" Error, no airport code entered.")
+        prog_msg.grid(
+            column=1,
+            row=0,
+            pady=10,
+            sticky="S")
+
+        # create button that closes the error box
+        close_button = ttk.Button(
+            none_select,
+            text='Close',
+            command=none_select.destroy)
+        close_button.grid(
+            column=1,
+            row=1,
+            sticky="N")
+
+    # Execute the window
+    Thread(target=finder.mainloop()).start()
+
+
 def flightaware_history(aircraft):
     """
     Grab the aircraft history from flight aware and return pandas dataframe containing history data.
@@ -217,16 +538,24 @@ def flightaware_history(aircraft):
             date = columns[0].text.strip()
             try:
                 # If the airport is unknown it is listed as "Near" and no airport code given.
-                # In these cases, replace the airport code with "UNKW" for unknown
+                # unkw_airport_finder allows to modify the global variable and get the correct airport code
                 if "Near" in columns[2].text:
-                    origin = "UNKW"
+                    Thread(target=unkw_airport_finder(url)).start()
+                    origin = origin_fixed.upper().strip()
                 else:
                     origin = between_parentheses(columns[2].text)
                 if "Near" in columns[3].text:
-                    destination = "UNKW"
+                    t1 = Thread(target=unkw_airport_finder(url)).start()
+                    destination = destination_fixed.upper().strip()
                 else:
                     destination = between_parentheses(columns[3].text)
                 route = origin + "-" + destination
+
+                # # Reset the global variables for the next run to avoid any potential runaway errors with incorrect codes
+                # global origin_fixed, destination_fixed
+                # origin_fixed = "UNKW"
+                # destination_fixed = "UNKW"
+
             except TypeError:
                 logger.info(f" The airplane is currently in-air! The first row of the table has to be skipped...")
                 continue
@@ -721,10 +1050,10 @@ def calculate_stats(fleet, month):
                 landing_hist[airport] += 1
 
         # sort the airports list
-        landing_hist = dict(sorted(landing_hist.items(), key=lambda item:item[1], reverse=True))
+        landing_hist = dict(sorted(landing_hist.items(), key=lambda item: item[1], reverse=True))
         print(f" Trips to the following airports:")
         print(landing_hist)
-        
+
     print(f" ~~~~~~~~~~~~~~~~~ {month} stat line-up ~~~~~~~~~~~~~~~~~")
 
     # N81673 Archer
@@ -812,6 +1141,7 @@ def state_plotter(states, us_map=True):
         for n in states:
             usa[usa.STATE_ABBR == f"{n}"].plot(ax=ax, edgecolor="y", linewidth=2, alpha=0.3, linestyle="--")
     return ax
+
 
 def airport_coordinates(airport):
     """
@@ -904,6 +1234,7 @@ def airport_coordinates(airport):
     # finally, return the airport information
     return res
 
+
 def airports_plotter(aircraft, month):
     """Determine the airports visited specifically to be used for plotting in Geopandas"""
     # Establish connection with MySQL and init cursor
@@ -960,7 +1291,7 @@ def airports_plotter(aircraft, month):
             landing_hist[airport] += 1
 
     # sort the airports list
-    landing_hist = dict(sorted(landing_hist.items(), key=lambda item:item[1], reverse=True))
+    landing_hist = dict(sorted(landing_hist.items(), key=lambda item: item[1], reverse=True))
     # extract only the keys of the dictionary
     landing_hist_list = list(landing_hist.keys())
     return landing_hist_list
@@ -968,7 +1299,7 @@ def airports_plotter(aircraft, month):
 
 def local_area_map(fleet, area, month):
     """Use the lat/long data to plot a composite map of the KC area
-    # TODO ADD DOCSTRING
+    # TODO ADD DOCSTRING TO LOCAL_AREA_MAP
     """
 
     # Define the map
@@ -980,52 +1311,72 @@ def local_area_map(fleet, area, month):
     # N81673 Archer
     if "N81673" in fleet:
         df_N81673 = db_data_getter("N81673", month)
+        airports_N81673 = airports_plotter("N81673", month)
         # Catch condition where there are is no flight history
         if not df_N81673.empty:
             geom_N81673 = \
                 [Point(xy) for xy in zip(df_N81673["longitude"].astype(float), df_N81673["latitude"].astype(float))]
             gdf_N81673 = GeoDataFrame(df_N81673, geometry=geom_N81673)
             gdf_N81673.plot(ax=ax, color="red", markersize=5, label="Archer - N81673")
+    else:
+        # Create an empty list to allow for the airports plotter to combine all lists correctly
+        airports_N81673 = []
 
     # N3892Q C172 (OJC)
     if "N3892Q" in fleet:
         df_N3892Q = db_data_getter("N3892Q", month)
+        airports_N3892Q = airports_plotter("N3892Q", month)
         # Catch condition where there are is no flight history
         if not df_N3892Q.empty:
             geom_N3892Q = \
                 [Point(xy) for xy in zip(df_N3892Q["longitude"].astype(float), df_N3892Q["latitude"].astype(float))]
             gdf_N3892Q = GeoDataFrame(df_N3892Q, geometry=geom_N3892Q)
             gdf_N3892Q.plot(ax=ax, color="blue", markersize=5, label="C172 - N3892Q")
+    else:
+        # Create an empty list to allow for the airports plotter to combine all lists correctly
+        airports_N3892Q = []
 
     # N20389 C172 (OJC)
     if "N20389" in fleet:
         df_N20389 = db_data_getter("N20389", month)
+        airports_N20389 = airports_plotter("N20389", month)
         # Catch condition where there are is no flight history
         if not df_N20389.empty:
             geom_N20389 = \
                 [Point(xy) for xy in zip(df_N20389["longitude"].astype(float), df_N20389["latitude"].astype(float))]
             gdf_N20389 = GeoDataFrame(df_N20389, geometry=geom_N20389)
             gdf_N20389.plot(ax=ax, color="green", markersize=5, label="C172 - N20389")
+    else:
+        # Create an empty list to allow for the airports plotter to combine all lists correctly
+        airports_N20389 = []
 
     # N182WK C182 (LXT)
     if "N182WK" in fleet:
         df_N182WK = db_data_getter("N182WK", month)
+        airports_N182WK = airports_plotter("N182WK", month)
         # Catch condition where there are is no flight history
         if not df_N182WK.empty:
             geom_N182WK = \
                 [Point(xy) for xy in zip(df_N182WK["longitude"].astype(float), df_N182WK["latitude"].astype(float))]
             gdf_N182WK = GeoDataFrame(df_N182WK, geometry=geom_N182WK)
             gdf_N182WK.plot(ax=ax, color="cyan", markersize=5, label="C182 - N182WK")
+    else:
+        # Create an empty list to allow for the airports plotter to combine all lists correctly
+        airports_N182WK = []
 
     # N58843 C182 (LXT)
     if "N58843" in fleet:
         df_N58843 = db_data_getter("N58843", month)
+        airports_N58843 = airports_plotter("N58843", month)
         # Catch condition where there are is no flight history
         if not df_N58843.empty:
             geom_N58843 = \
                 [Point(xy) for xy in zip(df_N58843["longitude"].astype(float), df_N58843["latitude"].astype(float))]
             gdf_N58843 = GeoDataFrame(df_N58843, geometry=geom_N58843)
             gdf_N58843.plot(ax=ax, color="grey", markersize=5, label="C182 - N58843")
+    else:
+        # Create an empty list to allow for the airports plotter to combine all lists correctly
+        airports_N58843 = []
 
     # N82145 Saratoga
     if "N82145" in fleet:
@@ -1056,7 +1407,13 @@ def local_area_map(fleet, area, month):
         airports_N4803P = []
 
     # Combined all the airport data, save only the unique values
-    airports_fleet = list(set(airports_N82145 + airports_N4803P))
+    airports_fleet = list(set(airports_N81673 +
+                              airports_N3892Q +
+                              airports_N20389 +
+                              airports_N182WK +
+                              airports_N58843 +
+                              airports_N82145 +
+                              airports_N4803P))
     # Remove UNKW from list
     if "UNKW" in airports_fleet:
         airports_fleet.remove("UNKW")
@@ -1107,7 +1464,7 @@ def main():
     root.attributes('-topmost', False)
 
     fleet = ("N81673 - Archer",
-             "N2389Q - C172",
+             "N3892Q - C172",
              "N20389 - C172",
              "N182WK - C182",
              "N58843 - C182",
@@ -1254,57 +1611,57 @@ def main():
 
         selected_aircraft_str = "\n".join(selected_aircraft)
 
-        # create message box that contains a progress bar on the status of the fleet
-        aircraft_progress = tk.Toplevel(root)
-        aircraft_progress.title("Data Gathering Progress")
-        aircraft_progress.resizable(False, False)
-
-        # Bring the window to the top of the screen
-        aircraft_progress.attributes('-topmost', True)
-        aircraft_progress.update()
-        aircraft_progress.attributes('-topmost', False)
-
-        # Position message box to be coordinated with the root window
-        root_x = root.winfo_rootx()
-        root_y = root.winfo_rooty()
-        win_x = root_x + 250
-        win_y = root_y + 50
-        aircraft_progress.geometry(f'+{win_x}+{win_y}')
-
-        # Configure columns/rows
-        aircraft_progress.columnconfigure(1, weight=1)
-        aircraft_progress.rowconfigure(1, weight=1)
-
-        # create the label on the message box
-        prog_msg = tk.Label(aircraft_progress,
-                            text=f" Getting aircraft data for: \n{selected_aircraft_str}")
-        prog_msg.grid(column=1, row=0)
-
-        # create the progressbar
-        pb = ttk.Progressbar(
-            aircraft_progress,
-            orient='horizontal',
-            mode='indeterminate',
-            length=280)
-
-        # place the progressbar
-        pb.grid(column=1, row=1, columnspan=2, padx=10, pady=20)
-        pb.start()
-
-        # BUTTON: cancel data gathering
-        data_cancel_button = ttk.Button(
-            aircraft_progress,
-            text="Cancel",
-            command=lambda: data_cancel())
-        data_cancel_button.grid(
-            column=1,
-            row=2)
+        # # create message box that contains a progress bar on the status of the fleet
+        # aircraft_progress = tk.Toplevel(root)
+        # aircraft_progress.title("Data Gathering Progress")
+        # aircraft_progress.resizable(False, False)
+        #
+        # # Bring the window to the top of the screen
+        # aircraft_progress.attributes('-topmost', True)
+        # aircraft_progress.update()
+        # aircraft_progress.attributes('-topmost', False)
+        #
+        # # Position message box to be coordinated with the root window
+        # root_x = root.winfo_rootx()
+        # root_y = root.winfo_rooty()
+        # win_x = root_x + 250
+        # win_y = root_y + 50
+        # aircraft_progress.geometry(f'+{win_x}+{win_y}')
+        #
+        # # Configure columns/rows
+        # aircraft_progress.columnconfigure(1, weight=1)
+        # aircraft_progress.rowconfigure(1, weight=1)
+        #
+        # # create the label on the message box
+        # prog_msg = tk.Label(aircraft_progress,
+        #                     text=f" Getting aircraft data for: \n{selected_aircraft_str}")
+        # prog_msg.grid(column=1, row=0)
+        #
+        # # create the progressbar
+        # pb = ttk.Progressbar(
+        #     aircraft_progress,
+        #     orient='horizontal',
+        #     mode='indeterminate',
+        #     length=280)
+        #
+        # # place the progressbar
+        # pb.grid(column=1, row=1, columnspan=2, padx=10, pady=20)
+        # pb.start()
+        #
+        # # BUTTON: cancel data gathering
+        # data_cancel_button = ttk.Button(
+        #     aircraft_progress,
+        #     text="Cancel",
+        #     command=lambda: data_cancel())
+        # data_cancel_button.grid(
+        #     column=1,
+        #     row=2)
 
         # TODO THREADING
         # Call data gathering
         for aircraft in selected_aircraft:
             logger.info(f" ~~~~~~~~~~~~~ {aircraft} ~~~~~~~~~~~~~")
-            db_data_saver(aircraft)
+            Thread(target=db_data_saver(aircraft)).start()
             logger.info(f"\n")
             # if aircraft == selected_aircraft[-1]:
             #     log_output.configure(state="normal")  # allow editing of the log
@@ -1316,13 +1673,13 @@ def main():
             # else:
             #     sleep(1)
 
-        def data_cancel():
-            log_output.configure(state="normal")  # allow editing of the log
-            log_output.insert(tk.END, f"Data gathering has been cancelled!\n\n")
-            aircraft_progress.destroy()
-            # Always scroll to the index: "end"
-            log_output.see(tk.END)
-            log_output.configure(state="disabled")  # disable editing of the log
+        # def data_cancel():
+        #     log_output.configure(state="normal")  # allow editing of the log
+        #     log_output.insert(tk.END, f"Data gathering has been cancelled!\n\n")
+        #     aircraft_progress.destroy()
+        #     # Always scroll to the index: "end"
+        #     log_output.see(tk.END)
+        #     log_output.configure(state="disabled")  # disable editing of the log
 
     def graph_aircraft():
         check_pw()
@@ -1482,7 +1839,7 @@ def main():
         # Build new flight details tables
         try:
             # Create a flight details CHILD table
-            mycursor.execute(f"CREATE TABLE {table_name}("
+            mycursor.execute(f"CREATE TABLE IF NOT EXISTS {table_name}("
                              "time MEDIUMINT(10), "
                              "latitude FLOAT, "
                              "longitude FLOAT, "
@@ -1574,11 +1931,14 @@ def main():
         row=bot_button_row,
         padx=25)
 
+    def thread_sub1():  # TODO DOCUMENTATION OF THREAD_SUB1
+        Thread(target=get_aircraft_data()).start()
+
     # BUTTON: Get flight history
     aircraft_button = ttk.Button(
         root,
         text="Get flight history",
-        command=lambda: get_aircraft_data())
+        command=lambda: thread_sub1())
     aircraft_button.grid(
         column=2,
         row=bot_button_row,
@@ -1669,7 +2029,7 @@ def main():
         row=7)
 
     # Execute
-    root.mainloop()
+    Thread(target=root.mainloop()).start()
 
     logger.info(" Code complete.")
 
