@@ -7,7 +7,6 @@ Author: Jordan Becquer
 
 import sys
 from math import radians, cos, sin, asin, sqrt
-
 import geopandas
 import mysql.connector
 import requests
@@ -50,11 +49,11 @@ origin_fixed = "UNKW"
 destination_fixed = "UNKW"
 
 
-def mysql_connect(aircraft):
+def mysql_connect(database):
     """
     Connect to MySQL server, and grab database using aircraft ID
-    :param aircraft: Tail number of the aircraft
-    :type aircraft: str
+    :param database: Name of the database to be accessed
+    :type database: str
     :return: mysql.connector.connect() is pass, Exception if fail
     """
     try:
@@ -63,12 +62,12 @@ def mysql_connect(aircraft):
             host="localhost",
             user="root",
             passwd=pw,
-            database=aircraft
+            database=database
         )
-        logger.debug(f" Database connection to {aircraft} successful.")
+        logger.debug(f" Database connection to {database} successful.")
         return db
     except Exception as e:
-        logger.critical(f" {aircraft} database connection failed! (mysql_connect)")
+        logger.critical(f" {database} database connection failed! (mysql_connect)")
         sys.exit(e)
 
 
@@ -153,6 +152,65 @@ def convert_date(s):
         return s[7:] + "-12-" + s[0:2]
     else:
         sys.exit(" Invalid date code! (convert_date)")
+
+
+def check_date(aircraft, check_date):
+    """
+    Compare the dates between date_last_ran in MySQL and the history grabbed from flight aware
+    :return: Returns FALSE if date is older than date_last_ran, TRUE if date is sooner than date_last_ran
+    """
+
+    # Establish connection with MySQL and init cursor
+    db = mysql_connect("date_last_ran")
+    mycursor = db.cursor()
+
+    # Check if the date of this flight occurred before date_last_ran.
+    # If true, skip this flight and continue. Else continue with the code
+    # First, convert the above string "date" into a datetime date
+    date_conv = datetime.strptime(check_date, "%Y-%m-%d")
+    date_conv = date_conv.date()  # convert datetime.datetime into datetime.date
+
+    mycursor.execute(f"SELECT date FROM fleet WHERE aircraft = \"{aircraft}\"")
+
+    # fetch the data from the cursor and extract the 0th value
+    last_date = mycursor.fetchone()
+    last_date = last_date[0]
+
+    if date_conv < last_date:
+        # We want all dates INCLUDING the same date, in case flights happened later in the day following the last check
+        return True
+    else:
+        return False
+
+
+def date_last_ran(tail_num):
+    """
+    Save the date that the aircraft last successfully ran and saved. This date will be referenced by future runs.
+    """
+
+    # Establish connection with MySQL and init cursor
+    db = mysql_connect("date_last_ran")
+    mycursor = db.cursor()
+
+    # # Create base table
+    # mycursor.execute("CREATE TABLE IF NOT EXISTS date_last_ran.fleet("
+    #                  "aircraft VARCHAR(10), "
+    #                  "date DATE")
+
+    # get the current date using datetime, convert to string
+    curr_date = datetime.today().strftime("%Y-%m-%d")
+
+    try:
+        mycursor.execute(f"UPDATE date_last_ran.fleet "
+                         f"SET date = \"{curr_date}\" "
+                         f"WHERE aircraft = \"{tail_num}\"")
+        # commit the update to the database
+        db.commit()
+    except Exception as e:
+        logger.warning(f" Error while attempting to update the date_last_ran")
+        logger.warning(e)
+    else:
+        logger.debug(f" Date last ran updated successfully!")
 
 
 def unkw_airport_finder(url):
@@ -536,6 +594,17 @@ def flightaware_history(aircraft):
             """
             columns = row.find_all("td")
             date = columns[0].text.strip()
+
+            # Convert strings into a format that will allow them to be used as table names
+            date = convert_date(date)
+
+            # check if the date of the flight is before or after our date_last_ran
+            if check_date(aircraft, date):
+                logger.debug("Skipping flight that has already been logged...")
+                continue
+            else:
+                pass
+
             try:
                 # If the airport is unknown it is listed as "Near" and no airport code given.
                 # unkw_airport_finder allows to modify the global variable and get the correct airport code
@@ -572,8 +641,6 @@ def flightaware_history(aircraft):
                 logger.debug(f" \"First seen\" error... departure time has been corrected to: {dept_time}")
             dept_time = convert24(dept_time)
 
-            # Convert strings into a format that will allow them to be used as table names
-            date = convert_date(date)
             route = route.replace("-", "_")
             dept_time = dept_time.replace(":", "_")
             # build a row to be exported to pandas
@@ -587,8 +654,6 @@ def flightaware_history(aircraft):
         logger.critical(f" Failed to extract flight history! (flightaware_history)")
         logger.critical(f" error: {e}")
         logger.critical(f" Attempting to skip this row: {row}")
-        # TODO SOLVE THE FOLLOWING ROW ERROR:
-        #  <tr data-tablesaw-no-labels=""> <td colspan="7" style="text-align: center">No History Data (searched last 14 days)</td></tr>
 
 
 def flightaware_getter(url):
@@ -688,7 +753,7 @@ def db_data_saver(aircraft):
     if hist_df is None:
         return
 
-    logger.debug(f" Size of the hist_df dataframe: {hist_df.size}")
+    # logger.debug(f" Size of the hist_df dataframe: {hist_df.size}")
 
     # Establish connection with MySQL and initialize the cursor
     db = mysql_connect(aircraft)
@@ -749,6 +814,10 @@ def db_data_saver(aircraft):
     # Exit condition if there are no new flights to add to the database
     if not hist:
         logger.info(f" {aircraft} has no new flights to add to the database!")
+
+        # Update the date last ran in MySQL to be used for future flightaware calls.
+        date_last_ran(aircraft)
+
         logger.info(f" Continuing...")
         sleep(3)
         return
@@ -806,7 +875,7 @@ def db_data_saver(aircraft):
     for i in range(len(new_flights)):
         try:
             details_df = flightaware_getter(new_flights[i])
-            logger.debug(f" The size of the details_df is: {details_df}")
+            # logger.debug(f" The size of the details_df is: {details_df}")
             if details_df is None:
                 logger.critical(f" details_df is empty!")
                 continue
@@ -826,6 +895,10 @@ def db_data_saver(aircraft):
             logger.warning(" Waiting 3 seconds...")
             sleep(3)
     logger.info(f" Tables built successfully!")
+
+    # Update the date last ran in MySQL to be used for future flightaware calls.
+    date_last_ran(aircraft)
+
     db.close()
 
 
