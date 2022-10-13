@@ -510,7 +510,7 @@ def flightaware_history(aircraft):
             sys.exit(e)
 
         # Define of the dataframe
-        df = pd.DataFrame(columns=["date", "route", "dept_time", "url"])
+        df = pd.DataFrame(columns=["date", "route", "dept_time", "time_aloft", "url"])
 
         # Scrape data and save to panda dataframe
         rows = table.find_all("tr")
@@ -572,12 +572,14 @@ def flightaware_history(aircraft):
                 logger.debug(f" \"First seen\" error... departure time has been corrected to: {dept_time}")
             dept_time = convert24(dept_time)
 
+            aloft = columns[6].text.strip()
+
             # Convert strings into a format that will allow them to be used as table names
             date = convert_date(date)
             route = route.replace("-", "_")
             dept_time = dept_time.replace(":", "_")
             # build a row to be exported to pandas
-            out = [date, route, dept_time[:-3:], url]
+            out = [date, route, dept_time[:-3:], aloft, url]
             # build pandas
             df.loc[len(df)] = out
         logger.info(f" {aircraft} history saved successfully!")
@@ -681,7 +683,7 @@ def db_data_saver(aircraft):
     :param aircraft: N# of club aircraft, used for MySQL database name
     """
 
-    # Get pandas dataframe for plane history [date, route, dept_time, url]
+    # Get pandas dataframe for plane history [date, route, dept_time, time_aloft, url]
     hist_df = flightaware_history(aircraft)
 
     # catch edge case in flightaware_history, where no flight data exists from the past 14 days. Func will return None
@@ -699,6 +701,7 @@ def db_data_saver(aircraft):
                      "date DATE, "
                      "route VARCHAR(15), "
                      "dept_time VARCHAR(15), "
+                     "time_aloft VARCHAR(6), "
                      "url VARCHAR(100))")
 
     # Create SQLAlchemy engine to connect to MySQL Database
@@ -722,7 +725,8 @@ def db_data_saver(aircraft):
 
     # Delete duplicate data, since we are using if_exists="append" from above
     # Reference: https://phoenixnap.com/kb/mysql-remove-duplicate-rows#ftoc-heading-8
-    mycursor.execute("CREATE TABLE IF NOT EXISTS flight_history_temp SELECT DISTINCT date, route, dept_time, url "
+    mycursor.execute("CREATE TABLE IF NOT EXISTS flight_history_temp "
+                     "SELECT DISTINCT date, route, dept_time, time_aloft, url "
                      "FROM flight_history")
     mycursor.execute("DROP TABLE flight_history")
     mycursor.execute("ALTER TABLE flight_history_temp RENAME TO flight_history")
@@ -959,40 +963,47 @@ def calculate_stats(fleet, month):
         print(f" The total distance travelled was {round(total_dist, 2)} Miles")
         return total_dist
 
-    def time_aloft(data_df):
+    def time_aloft(aircraft, month):
         """
-        Calculate the max time aloft by using the aircraft in-air data
-        :return: time aloft as a timedelta format
+        Calculate the max time aloft and average time aloft
+        :return: total time aloft, average time aloft
         """
-        #  TODO THIS NEEDS TO BE UPDATED TO CALL INDIVIDUAL FLIGHTS THEN HAVE A RUNNING TOTAL OTHERWISE WE CAN
-        #   ADD THE FLIGHTAWARE COLUMN TO OUR DATABASE AND SUM IT THAT WAY
 
-        # time = []
-        # for row in data_df.itertuples(index=False):
-        #     time.append(row.latitude)
+        db = mysql_connect(aircraft)
+        mycursor = db.cursor()
 
-        # start_time = time[0]
-        # end_time = time[-1]
+        mycursor.execute(f"SELECT * FROM {aircraft}.flight_history "
+                         f"WHERE month(date)={month}")
 
-        start_time, end_time = data_df.time[~data_df.time.isna()].values[[0, -1]]
-        print(start_time)
-        print(end_time)
-        time_delta = end_time[0] - start_time[0]
+        # build list of aloft time
+        aloft = []
+        for x in mycursor:
+            # Filter out any potential errors, or old history from the database that may contain a 0 flight time
+            if x != 0:
+                aloft.append(x)
 
-        def strfdelta(tdelta, fmt):
-            """
-            Takes timedelta and returns a format that can be used to print hours and minutes
-            :param tdelta: flight time (end time - start time) in timedelta format
-            :param fmt: the return format, shown below
-            :return: a format that allows reporting of {hours}, {minutes}, and {seconds}
-            """
-            d = {"days": tdelta.days}
-            d["hours"], rem = divmod(tdelta.seconds, 3600)
-            d["minutes"], d["seconds"] = divmod(rem, 60)
-            return fmt.format(**d)
+        # crunch the data (convert from string (##:##) into engine hours (HH.MM)
+        hours_list = []
+        minutes_list = []
+        for x in aloft:
+            hours = int(x.split(":")[0])
+            minutes = int(x.split(":")[1])
 
-        print(strfdelta(time_delta, " The trip took {hours} hours and {minutes} minutes"))
-        return time_delta
+            hours_list.append(hours)
+            minutes_list.append(minutes)
+
+        # Find the sum of hours and minutes, add them together, and convert into Hobbs time
+        time_aloft = sum(hours_list) + round(sum(minutes_list) / 60, 1)
+
+        # Calculate average time aloft
+        hour_avg = sum(hours_list) / len(hours_list)
+        min_avg = round(sum(minutes_list) / len(minutes_list) / 60, 1)
+
+        avg_aloft = round(hour_avg + min_avg, 1)
+        print(f" The total time aloft was {time_aloft}.")
+        print(f" The average time aloft was {avg_aloft}.")
+
+        return time_aloft, avg_aloft
 
     def airports_visited(aircraft, month):
         """Determine the airports visited"""
@@ -1062,7 +1073,8 @@ def calculate_stats(fleet, month):
         # Catch condition where there are is no flight history
         if not df_N81673.empty:
             print(f" ~~~~~~~~~~~~~~~~~ Stats for N81673 (Archer) ~~~~~~~~~~~~~~~~~")
-            N81673_dist = dist_travelled(df_N81673)
+            dist_travelled(df_N81673)
+            time_aloft("N81673", month)
             airports_visited("N81673", month)
 
     # N3892Q C172 (OJC)
@@ -1071,7 +1083,8 @@ def calculate_stats(fleet, month):
         # Catch condition where there are is no flight history
         if not df_N3892Q.empty:
             print(f" ~~~~~~~~~~~~~~~~~ Stats for N3892Q (C172) ~~~~~~~~~~~~~~~~~")
-            N3892Q_dist = dist_travelled(df_N3892Q)
+            dist_travelled(df_N3892Q)
+            time_aloft("N3892Q", month)
             airports_visited("N3892Q", month)
 
     # N20389 C172 (OJC)
@@ -1080,7 +1093,8 @@ def calculate_stats(fleet, month):
         # Catch condition where there are is no flight history
         if not df_N20389.empty:
             print(f" ~~~~~~~~~~~~~~~~~ Stats for N20389 (C172) ~~~~~~~~~~~~~~~~~")
-            N20389_dist = dist_travelled(df_N20389)
+            dist_travelled(df_N20389)
+            time_aloft("N20389", month)
             airports_visited("N20389", month)
 
     # N182WK C182 (LXT)
@@ -1089,7 +1103,8 @@ def calculate_stats(fleet, month):
         # Catch condition where there are is no flight history
         if not df_N182WK.empty:
             print(f" ~~~~~~~~~~~~~~~~~ Stats for N182WK (C182) ~~~~~~~~~~~~~~~~~")
-            N182WK_dist = dist_travelled(df_N182WK)
+            dist_travelled(df_N182WK)
+            time_aloft("N182WK", month)
             airports_visited("N182WK", month)
 
     # N58843 C182 (OJC)
@@ -1098,7 +1113,8 @@ def calculate_stats(fleet, month):
         # Catch condition where there are is no flight history
         if not df_N58843.empty:
             print(f" ~~~~~~~~~~~~~~~~~ Stats for N58843 (C182) ~~~~~~~~~~~~~~~~~")
-            N58843_dist = dist_travelled(df_N58843)
+            dist_travelled(df_N58843)
+            time_aloft("N58843", month)
             airports_visited("N58843", month)
 
     # N82145 Saratoga
@@ -1107,7 +1123,8 @@ def calculate_stats(fleet, month):
         # Catch condition where there are is no flight history
         if not df_N82145.empty:
             print(f" ~~~~~~~~~~~~~~~~~ Stats for N82145 (Saratoga) ~~~~~~~~~~~~~~~~~")
-            N82145_dist = dist_travelled(df_N82145)
+            dist_travelled(df_N82145)
+            time_aloft("N82145", month)
             airports_visited("N82145", month)
 
     # N4803P Debonair
@@ -1116,7 +1133,8 @@ def calculate_stats(fleet, month):
         # Catch condition where there are is no flight history
         if not df_N4803P.empty:
             print(f" ~~~~~~~~~~~~~~~~~ Stats for N4803P (Debonair) ~~~~~~~~~~~~~~~~~")
-            N4803P_dist = dist_travelled(df_N4803P)
+            dist_travelled(df_N4803P)
+            time_aloft("N4803P", month)
             airports_visited("N4803P", month)
 
 
