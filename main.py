@@ -534,7 +534,7 @@ def flightaware_history(aircraft):
     Grab the aircraft history from flight aware and return pandas dataframe containing history data.
     :param aircraft: aircraft ID. ex: N182WK
     :type aircraft: str
-    :return: pandas df = [date, route, dept_time, URL]
+    :return: pandas df = [date, route, dept_time, time_aloft, URL]
     """
     headers = {
         'User_Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
@@ -642,9 +642,6 @@ def flightaware_history(aircraft):
             dept_time = convert24(dept_time)
 
             aloft = columns[6].text.strip()
-
-            # Convert strings into a format that will allow them to be used as table names
-            date = convert_date(date)
 
             route = route.replace("-", "_")
             dept_time = dept_time.replace(":", "_")
@@ -857,7 +854,7 @@ def db_data_saver(aircraft):
             hour = x[2]
             hour = hour[0:2:]
             name.append(date + "__" + x[1] + "__" + hour)
-            url_list.append(x[3])
+            url_list.append(x[4])
     except Exception as e:
         db.close()
         logger.critical(" An error occurred while trying to build the URL list! (db_data_saver)")
@@ -1048,15 +1045,45 @@ def calculate_stats(fleet, month):
         db = mysql_connect(aircraft)
         mycursor = db.cursor()
 
-        mycursor.execute(f"SELECT * FROM {aircraft}.flight_history "
-                         f"WHERE month(date)={month}")
+        # convert month string format to number (January -> 1)
+        month_dates = {
+            "January": 1,
+            "February": 2,
+            "March": 3,
+            "April": 4,
+            "May": 5,
+            "June": 6,
+            "July": 7,
+            "August": 8,
+            "September": 9,
+            "October": 10,
+            "November": 11,
+            "December": 12}
+
+        # convert the month to a number, if not all selected
+        if month != "All":
+            month = month_dates[month]
+
+        # Use the flight history table
+        try:
+            if month != "All":
+                mycursor.execute(f"SELECT time_aloft FROM {aircraft}.flight_history "
+                                 f"WHERE month(date)={month}")
+            else:
+                mycursor.execute(f"SELECT time_aloft FROM flight_history")
+
+        except Exception as e:
+            db.close()
+            logger.critical(" An error occurred while grabbing the time aloft! (time_aloft)")
+            logger.critical(e)
+            sys.exit(e)
 
         # build list of aloft time
         aloft = []
         for x in mycursor:
             # Filter out any potential errors, or old history from the database that may contain a 0 flight time
-            if x != 0:
-                aloft.append(x)
+            if x[0].strip("'") != "0":
+                aloft.append(x[0].strip("'"))
 
         # crunch the data (convert from string (##:##) into engine hours (HH.MM)
         hours_list = []
@@ -1119,7 +1146,7 @@ def calculate_stats(fleet, month):
                 hist.append(dest)
         except Exception as e:
             db.close()
-            logger.critical(" An error occurred while getting the route history! (airports_visited)")
+            logger.critical(" An error occurred while getting the airports used! (airports_visited)")
             logger.critical(e)
             sys.exit(e)
 
