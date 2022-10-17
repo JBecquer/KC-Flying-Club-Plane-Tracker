@@ -213,10 +213,11 @@ def date_last_ran(tail_num):
         logger.debug(f" Date last ran updated successfully!")
 
 
-def unkw_airport_finder(url):
+def unkw_airport_finder(url, orig_flag=False):
     """
     Determine which airport is the origin/destination airport. Used to handle situations where flightaware gives
     any response other than the airport identifier (e.g. lat/long coordinates or other misc. code)
+    If origin airport, set TRUE
     :rtype: str
     :return: ICAO airport identifier code. "UNKW" if still unable to determine
     """
@@ -377,8 +378,12 @@ def unkw_airport_finder(url):
                 :return: ICAO code
                 :rtype: str
                 """
-                global origin_fixed
-                origin_fixed = code_in
+                if orig_flag:
+                    global origin_fixed
+                    origin_fixed = code_in
+                else:
+                    global destination_fixed
+                    destination_fixed = code_in
                 done_win.destroy()
                 finder.destroy()
                 finder.quit()
@@ -609,12 +614,12 @@ def flightaware_history(aircraft):
                 # If the airport is unknown it is listed as "Near" and no airport code given.
                 # unkw_airport_finder allows to modify the global variable and get the correct airport code
                 if "Near" in columns[2].text:
-                    Thread(target=unkw_airport_finder(url)).start()
+                    Thread(target=unkw_airport_finder(url, orig_flag=True)).start()
                     origin = origin_fixed.upper().strip()
                 else:
                     origin = between_parentheses(columns[2].text)
                 if "Near" in columns[3].text:
-                    t1 = Thread(target=unkw_airport_finder(url)).start()
+                    Thread(target=unkw_airport_finder(url, orig_flag=False)).start()
                     destination = destination_fixed.upper().strip()
                 else:
                     destination = between_parentheses(columns[3].text)
@@ -1103,8 +1108,8 @@ def calculate_stats(fleet, month):
         min_avg = round(sum(minutes_list) / len(minutes_list) / 60, 1)
 
         avg_aloft = round(hour_avg + min_avg, 1)
-        print(f" The total time aloft was {time_aloft}.")
-        print(f" The average time aloft was {avg_aloft}.")
+        print(f" The total time aloft was {time_aloft}")
+        print(f" The average time aloft was {avg_aloft}")
 
         return time_aloft, avg_aloft
 
@@ -1141,7 +1146,8 @@ def calculate_stats(fleet, month):
                 mycursor.execute(f"SELECT * FROM flight_history")
             hist = []
             for x in mycursor:
-                # convert DATE format to string with underscores to allow to be used as table name
+                # extract the route information, using the destination as the airport used for graphing/stats
+                # TODO THIS COULD BE UPDATED TO SELECT ROUTE FROM FLIGHT HISTORY, INSTEAD OF SELECT *
                 dest = x[1].split("_")[1]
                 hist.append(dest)
         except Exception as e:
