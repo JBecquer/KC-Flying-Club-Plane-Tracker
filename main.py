@@ -954,7 +954,8 @@ def db_data_getter(aircraft, month):
     try:
         if month != "All":
             mycursor.execute(f"SELECT * FROM flight_history "
-                             f"WHERE month(date)={month}")
+                             f"WHERE month(date)={month} "
+                             f"ORDER BY date ASC")
         else:
             mycursor.execute(f"SELECT * FROM flight_history")
         hist = []
@@ -971,14 +972,20 @@ def db_data_getter(aircraft, month):
         logger.critical(e)
         sys.exit(e)
 
-    # Defining of the dataframe
+    # Defining of the dataframe that will contain all of the flight history data
     total_df = pd.DataFrame()
 
     # for each piece of history, get the flight data
+    # Set the ID equal to a unique index, to allow seperate flights to have their own line segment (ref: local_area_map)
+    # If we don't have this, the data is drawn as a single line which causes "jumping" between multiple flights
+    # that aren't ordered together exactly
     try:
+        i = 1  # init counter
         for leg in hist:
             query = f"SELECT * FROM {leg}"
             res_df = pd.read_sql(query, engine)
+            res_df["ID"] = str(i)
+            i += 1
             if res_df.empty:
                 continue
             total_df = pd.concat([total_df, res_df], ignore_index=True)
@@ -1445,7 +1452,6 @@ def local_area_map(fleet, area, month, option):
                 [Point(xy) for xy in zip(df_N81673["longitude"].astype(float), df_N81673["latitude"].astype(float))]
             gdf_N81673 = GeoDataFrame(df_N81673, geometry=geom_N81673)
             if option == "Lines":
-                df_N81673["ID"] = "1"  # combine all of the points into 1 "group" to allow LineString
                 gdf_N81673_line = gdf_N81673.groupby(["ID"])["geometry"].apply(lambda x: LineString(x.tolist()))
                 gdf_N81673_line = gpd.GeoDataFrame(gdf_N81673_line, geometry="geometry")
                 gdf_N81673_line.plot(ax=ax, color="red", markersize=1, label="Archer - N81673")
@@ -1466,7 +1472,6 @@ def local_area_map(fleet, area, month, option):
                 [Point(xy) for xy in zip(df_N3892Q["longitude"].astype(float), df_N3892Q["latitude"].astype(float))]
             gdf_N3892Q = GeoDataFrame(df_N3892Q, geometry=geom_N3892Q)
             if option == "Lines":
-                df_N3892Q["ID"] = "1"
                 gdf_N3892Q_line = gdf_N3892Q.groupby(["ID"])["geometry"].apply(lambda x: LineString(x.tolist()))
                 gdf_N3892Q_line = gpd.GeoDataFrame(gdf_N3892Q_line, geometry="geometry")
                 gdf_N3892Q_line.plot(ax=ax, color="blue", markersize=1, label="C172 - N3892Q")
@@ -1487,7 +1492,6 @@ def local_area_map(fleet, area, month, option):
                 [Point(xy) for xy in zip(df_N20389["longitude"].astype(float), df_N20389["latitude"].astype(float))]
             gdf_N20389 = GeoDataFrame(df_N20389, geometry=geom_N20389)
             if option == "Lines":
-                df_N20389["ID"] = "1"
                 gdf_N20389_line = gdf_N20389.groupby(["ID"])["geometry"].apply(lambda x: LineString(x.tolist()))
                 gdf_N20389_line = gpd.GeoDataFrame(gdf_N20389_line, geometry="geometry")
                 gdf_N20389_line.plot(ax=ax, color="green", markersize=1, label="C172 - N20389")
@@ -1508,7 +1512,6 @@ def local_area_map(fleet, area, month, option):
                 [Point(xy) for xy in zip(df_N182WK["longitude"].astype(float), df_N182WK["latitude"].astype(float))]
             gdf_N182WK = GeoDataFrame(df_N182WK, geometry=geom_N182WK)
             if option == "Lines":
-                df_N182WK["ID"] = "1"
                 gdf_N182WK_line = gdf_N182WK.groupby(["ID"])["geometry"].apply(lambda x: LineString(x.tolist()))
                 gdf_N182WK_line = gpd.GeoDataFrame(gdf_N182WK_line, geometry="geometry")
                 gdf_N182WK_line.plot(ax=ax, color="orange", markersize=1, label="C182 - N182WK")
@@ -1529,7 +1532,6 @@ def local_area_map(fleet, area, month, option):
                 [Point(xy) for xy in zip(df_N58843["longitude"].astype(float), df_N58843["latitude"].astype(float))]
             gdf_N58843 = GeoDataFrame(df_N58843, geometry=geom_N58843)
             if option == "Lines":
-                df_N58843["ID"] = "1"
                 gdf_N58843_line = gdf_N58843.groupby(["ID"])["geometry"].apply(lambda x: LineString(x.tolist()))
                 gdf_N58843_line = gpd.GeoDataFrame(gdf_N58843_line, geometry="geometry")
                 gdf_N58843_line.plot(ax=ax, color="grey", markersize=1, label="C182 - N58843")
@@ -1550,7 +1552,6 @@ def local_area_map(fleet, area, month, option):
                 [Point(xy) for xy in zip(df_N82145["longitude"].astype(float), df_N82145["latitude"].astype(float))]
             gdf_N82145 = GeoDataFrame(df_N82145, geometry=geom_N82145)
             if option == "Lines":
-                df_N82145["ID"] = "1"
                 gdf_N82145_line = gdf_N82145.groupby(["ID"])["geometry"].apply(lambda x: LineString(x.tolist()))
                 gdf_N82145_line = gpd.GeoDataFrame(gdf_N82145_line, geometry="geometry")
                 gdf_N82145_line.plot(ax=ax, color="black", markersize=1, label="Saratoga - N82145")
@@ -1571,7 +1572,6 @@ def local_area_map(fleet, area, month, option):
                 [Point(xy) for xy in zip(df_N4803P["longitude"].astype(float), df_N4803P["latitude"].astype(float))]
             gdf_N4803P = GeoDataFrame(df_N4803P, geometry=geom_N4803P)
             if option == "Lines":
-                df_N4803P["ID"] = "1"
                 gdf_N4803P_line = gdf_N4803P.groupby(["ID"])["geometry"].apply(lambda x: LineString(x.tolist()))
                 gdf_N4803P_line = gpd.GeoDataFrame(gdf_N4803P_line, geometry="geometry")
                 gdf_N4803P_line.plot(ax=ax, color="magenta", markersize=1, label="Debonair - N4803P")
@@ -2223,11 +2223,8 @@ def main():
 
         rad_opt.grid(
             column=1,
-            row=7+i
+            row=7 + i
         )
-
-
-
 
     # Execute
     Thread(target=root.mainloop()).start()
