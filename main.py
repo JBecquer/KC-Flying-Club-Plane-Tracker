@@ -24,6 +24,8 @@ from tkinter.scrolledtext import ScrolledText
 from time import sleep
 from datetime import datetime
 from threading import Thread
+import contextily as cx
+
 
 # create logger (copied from https://docs.python.org/3/howto/logging.html#logging-advanced-tutorial)
 # logging.basicConfig(filename="logname.txt",
@@ -1262,6 +1264,7 @@ def state_plotter(states, us_map=True):
     :return:
     """
     usa = gpd.read_file("states_21basic/states.shp")
+    usa = usa.to_crs(epsg=3857)
 
     fig, ax = plt.subplots(figsize=(10, 10))
 
@@ -1451,6 +1454,11 @@ def local_area_map(fleet, area, month, option):
             geom_N81673 = \
                 [Point(xy) for xy in zip(df_N81673["longitude"].astype(float), df_N81673["latitude"].astype(float))]
             gdf_N81673 = GeoDataFrame(df_N81673, geometry=geom_N81673)
+
+            # define the coordinates initially as 4326 then convert to 3857
+            gdf_N81673.crs = "EPSG:4326"
+            gdf_N81673 = gdf_N81673.to_crs(epsg=3857)
+
             if option == "Lines":
                 gdf_N81673_line = gdf_N81673.groupby(["ID"])["geometry"].apply(lambda x: LineString(x.tolist()))
                 gdf_N81673_line = gpd.GeoDataFrame(gdf_N81673_line, geometry="geometry")
@@ -1471,6 +1479,12 @@ def local_area_map(fleet, area, month, option):
             geom_N3892Q = \
                 [Point(xy) for xy in zip(df_N3892Q["longitude"].astype(float), df_N3892Q["latitude"].astype(float))]
             gdf_N3892Q = GeoDataFrame(df_N3892Q, geometry=geom_N3892Q)
+
+
+            # define the coordinates initially as 4326 then convert to 3857
+            gdf_N3892Q.crs = "EPSG:4326"
+            gdf_N3892Q = gdf_N3892Q.to_crs(epsg=3857)
+
             if option == "Lines":
                 gdf_N3892Q_line = gdf_N3892Q.groupby(["ID"])["geometry"].apply(lambda x: LineString(x.tolist()))
                 gdf_N3892Q_line = gpd.GeoDataFrame(gdf_N3892Q_line, geometry="geometry")
@@ -1478,6 +1492,7 @@ def local_area_map(fleet, area, month, option):
             else:
                 gdf_N3892Q = gpd.GeoDataFrame(gdf_N3892Q, geometry="geometry")
                 gdf_N3892Q.plot(ax=ax, color="blue", markersize=1, label="C172 - N3892Q")
+
     else:
         # Create an empty list to allow for the airports plotter to combine all lists correctly
         airports_N3892Q = []
@@ -1491,6 +1506,12 @@ def local_area_map(fleet, area, month, option):
             geom_N20389 = \
                 [Point(xy) for xy in zip(df_N20389["longitude"].astype(float), df_N20389["latitude"].astype(float))]
             gdf_N20389 = GeoDataFrame(df_N20389, geometry=geom_N20389)
+
+
+            # define the coordinates initially as 4326 then convert to 3857
+            gdf_N20389.crs = "EPSG:4326"
+            gdf_N20389 = gdf_N20389.to_crs(epsg=3857)
+
             if option == "Lines":
                 gdf_N20389_line = gdf_N20389.groupby(["ID"])["geometry"].apply(lambda x: LineString(x.tolist()))
                 gdf_N20389_line = gpd.GeoDataFrame(gdf_N20389_line, geometry="geometry")
@@ -1498,6 +1519,7 @@ def local_area_map(fleet, area, month, option):
             else:
                 gdf_N20389 = gpd.GeoDataFrame(gdf_N20389, geometry="geometry")
                 gdf_N20389.plot(ax=ax, color="green", markersize=1, label="C172 - N20389")
+
     else:
         # Create an empty list to allow for the airports plotter to combine all lists correctly
         airports_N20389 = []
@@ -1511,6 +1533,13 @@ def local_area_map(fleet, area, month, option):
             geom_N182WK = \
                 [Point(xy) for xy in zip(df_N182WK["longitude"].astype(float), df_N182WK["latitude"].astype(float))]
             gdf_N182WK = GeoDataFrame(df_N182WK, geometry=geom_N182WK)
+
+
+            # define the coordinates initially as 4326 then convert to 3857
+            gdf_N182WK.crs = "EPSG:4326"
+            gdf_N182WK = gdf_N182WK.to_crs(epsg=3857)
+
+
             if option == "Lines":
                 gdf_N182WK_line = gdf_N182WK.groupby(["ID"])["geometry"].apply(lambda x: LineString(x.tolist()))
                 gdf_N182WK_line = gpd.GeoDataFrame(gdf_N182WK_line, geometry="geometry")
@@ -1518,6 +1547,7 @@ def local_area_map(fleet, area, month, option):
             else:
                 gdf_N182WK = gpd.GeoDataFrame(gdf_N182WK, geometry="geometry")
                 gdf_N182WK.plot(ax=ax, color="orange", markersize=1, label="C182 - N182WK")
+
     else:
         # Create an empty list to allow for the airports plotter to combine all lists correctly
         airports_N182WK = []
@@ -1531,6 +1561,13 @@ def local_area_map(fleet, area, month, option):
             geom_N58843 = \
                 [Point(xy) for xy in zip(df_N58843["longitude"].astype(float), df_N58843["latitude"].astype(float))]
             gdf_N58843 = GeoDataFrame(df_N58843, geometry=geom_N58843)
+
+
+            # define the coordinates initially as 4326 then convert to 3857
+            gdf_N58843.crs = "EPSG:4326"
+            gdf_N58843 = gdf_N58843.to_crs(epsg=3857)
+
+
             if option == "Lines":
                 gdf_N58843_line = gdf_N58843.groupby(["ID"])["geometry"].apply(lambda x: LineString(x.tolist()))
                 gdf_N58843_line = gpd.GeoDataFrame(gdf_N58843_line, geometry="geometry")
@@ -1538,6 +1575,7 @@ def local_area_map(fleet, area, month, option):
             else:
                 gdf_N58843 = gpd.GeoDataFrame(gdf_N58843, geometry="geometry")
                 gdf_N58843.plot(ax=ax, color="grey", markersize=1, label="C182 - N58843")
+
     else:
         # Create an empty list to allow for the airports plotter to combine all lists correctly
         airports_N58843 = []
@@ -1551,6 +1589,13 @@ def local_area_map(fleet, area, month, option):
             geom_N82145 = \
                 [Point(xy) for xy in zip(df_N82145["longitude"].astype(float), df_N82145["latitude"].astype(float))]
             gdf_N82145 = GeoDataFrame(df_N82145, geometry=geom_N82145)
+
+
+            # define the coordinates initially as 4326 then convert to 3857
+            gdf_N82145.crs = "EPSG:4326"
+            gdf_N82145 = gdf_N82145.to_crs(epsg=3857)
+
+
             if option == "Lines":
                 gdf_N82145_line = gdf_N82145.groupby(["ID"])["geometry"].apply(lambda x: LineString(x.tolist()))
                 gdf_N82145_line = gpd.GeoDataFrame(gdf_N82145_line, geometry="geometry")
@@ -1558,6 +1603,7 @@ def local_area_map(fleet, area, month, option):
             else:
                 gdf_N82145 = gpd.GeoDataFrame(gdf_N82145, geometry="geometry")
                 gdf_N82145.plot(ax=ax, color="black", markersize=1, label="Saratoga - N82145")
+
     else:
         # Create an empty list to allow for the airports plotter to combine all lists correctly
         airports_N82145 = []
@@ -1571,6 +1617,13 @@ def local_area_map(fleet, area, month, option):
             geom_N4803P = \
                 [Point(xy) for xy in zip(df_N4803P["longitude"].astype(float), df_N4803P["latitude"].astype(float))]
             gdf_N4803P = GeoDataFrame(df_N4803P, geometry=geom_N4803P)
+
+
+            # define the coordinates initially as 4326 then convert to 3857
+            gdf_N4803P.crs = "EPSG:4326"
+            gdf_N4803P = gdf_N4803P.to_crs(epsg=3857)
+
+
             if option == "Lines":
                 gdf_N4803P_line = gdf_N4803P.groupby(["ID"])["geometry"].apply(lambda x: LineString(x.tolist()))
                 gdf_N4803P_line = gpd.GeoDataFrame(gdf_N4803P_line, geometry="geometry")
@@ -1578,6 +1631,7 @@ def local_area_map(fleet, area, month, option):
             else:
                 gdf_N4803P = gpd.GeoDataFrame(gdf_N4803P, geometry="geometry")
                 gdf_N4803P.plot(ax=ax, color="magenta", markersize=1, label="Debonair - N4803P")
+
     else:
         # Create an empty list to allow for the airports plotter to combine all lists correctly
         airports_N4803P = []
@@ -1607,8 +1661,10 @@ def local_area_map(fleet, area, month, option):
     # create geodataframe of airports
     airport_gdf = \
         geopandas.GeoDataFrame(coord_df, geometry=geopandas.points_from_xy(coord_df.longitude, coord_df.latitude))
+    airport_gdf = airport_gdf.set_crs(epsg=4326)
+    airport_gdf = airport_gdf.to_crs(epsg=3857)
     for x, y, label in zip(airport_gdf.geometry.x, airport_gdf.geometry.y, airport_gdf.airport):
-        ax.annotate(label, xy=(x, y), xytext=(3, 3), textcoords="offset points")
+        ax.annotate(label, xy=(x, y), xytext=(3, 3), textcoords="offset points", )
 
     # finally, plot
     plt.legend(loc="upper right")
@@ -1616,6 +1672,9 @@ def local_area_map(fleet, area, month, option):
         plt.title(f"{month} flight history")
     else:
         plt.title(f"2022 flight history")
+
+    cx.add_basemap(ax)
+
     plt.show()
     pass
 
