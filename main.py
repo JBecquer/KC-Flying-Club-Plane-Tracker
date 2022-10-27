@@ -13,7 +13,7 @@ import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 from sqlalchemy import create_engine
-from shapely.geometry import Point
+from shapely.geometry import Point, LineString
 import geopandas as gpd
 from geopandas import GeoDataFrame
 import matplotlib.pyplot as plt
@@ -956,7 +956,8 @@ def db_data_getter(aircraft, month):
     try:
         if month != "All":
             mycursor.execute(f"SELECT * FROM flight_history "
-                             f"WHERE month(date)={month}")
+                             f"WHERE month(date)={month} "
+                             f"ORDER BY date ASC")
         else:
             mycursor.execute(f"SELECT * FROM flight_history")
         hist = []
@@ -973,14 +974,20 @@ def db_data_getter(aircraft, month):
         logger.critical(e)
         sys.exit(e)
 
-    # Defining of the dataframe
+    # Defining of the dataframe that will contain all of the flight history data
     total_df = pd.DataFrame()
 
     # for each piece of history, get the flight data
+    # Set the ID equal to a unique index, to allow seperate flights to have their own line segment (ref: local_area_map)
+    # If we don't have this, the data is drawn as a single line which causes "jumping" between multiple flights
+    # that aren't ordered together exactly
     try:
+        i = 1  # init counter
         for leg in hist:
             query = f"SELECT * FROM {leg}"
             res_df = pd.read_sql(query, engine)
+            res_df["ID"] = str(i)
+            i += 1
             if res_df.empty:
                 continue
             total_df = pd.concat([total_df, res_df], ignore_index=True)
@@ -1427,7 +1434,7 @@ def airports_plotter(aircraft, month):
     return landing_hist_list
 
 
-def local_area_map(fleet, area, month):
+def local_area_map(fleet, area, month, option):
     """Use the lat/long data to plot a composite map of the KC area
     # TODO ADD DOCSTRING TO LOCAL_AREA_MAP
     """
@@ -1451,8 +1458,14 @@ def local_area_map(fleet, area, month):
             # define the coordinates initially as 4326 then convert to 3857
             gdf_N81673.crs = "EPSG:4326"
             gdf_N81673 = gdf_N81673.to_crs(epsg=3857)
-            gdf_N81673.plot(ax=ax, color="red", markersize=5, label="Archer - N81673")
 
+            if option == "Lines":
+                gdf_N81673_line = gdf_N81673.groupby(["ID"])["geometry"].apply(lambda x: LineString(x.tolist()))
+                gdf_N81673_line = gpd.GeoDataFrame(gdf_N81673_line, geometry="geometry")
+                gdf_N81673_line.plot(ax=ax, color="red", markersize=1, label="Archer - N81673")
+            else:
+                gdf_N81673 = gpd.GeoDataFrame(gdf_N81673, geometry="geometry")
+                gdf_N81673.plot(ax=ax, color="red", markersize=1, label="Archer - N81673")
     else:
         # Create an empty list to allow for the airports plotter to combine all lists correctly
         airports_N81673 = []
@@ -1467,10 +1480,19 @@ def local_area_map(fleet, area, month):
                 [Point(xy) for xy in zip(df_N3892Q["longitude"].astype(float), df_N3892Q["latitude"].astype(float))]
             gdf_N3892Q = GeoDataFrame(df_N3892Q, geometry=geom_N3892Q)
 
+
             # define the coordinates initially as 4326 then convert to 3857
             gdf_N3892Q.crs = "EPSG:4326"
             gdf_N3892Q = gdf_N3892Q.to_crs(epsg=3857)
-            gdf_N3892Q.plot(ax=ax, color="blue", markersize=5, label="C172 - N3892Q")
+
+            if option == "Lines":
+                gdf_N3892Q_line = gdf_N3892Q.groupby(["ID"])["geometry"].apply(lambda x: LineString(x.tolist()))
+                gdf_N3892Q_line = gpd.GeoDataFrame(gdf_N3892Q_line, geometry="geometry")
+                gdf_N3892Q_line.plot(ax=ax, color="blue", markersize=1, label="C172 - N3892Q")
+            else:
+                gdf_N3892Q = gpd.GeoDataFrame(gdf_N3892Q, geometry="geometry")
+                gdf_N3892Q.plot(ax=ax, color="blue", markersize=1, label="C172 - N3892Q")
+
     else:
         # Create an empty list to allow for the airports plotter to combine all lists correctly
         airports_N3892Q = []
@@ -1485,10 +1507,19 @@ def local_area_map(fleet, area, month):
                 [Point(xy) for xy in zip(df_N20389["longitude"].astype(float), df_N20389["latitude"].astype(float))]
             gdf_N20389 = GeoDataFrame(df_N20389, geometry=geom_N20389)
 
+
             # define the coordinates initially as 4326 then convert to 3857
             gdf_N20389.crs = "EPSG:4326"
             gdf_N20389 = gdf_N20389.to_crs(epsg=3857)
-            gdf_N20389.plot(ax=ax, color="green", markersize=5, label="C172 - N20389")
+
+            if option == "Lines":
+                gdf_N20389_line = gdf_N20389.groupby(["ID"])["geometry"].apply(lambda x: LineString(x.tolist()))
+                gdf_N20389_line = gpd.GeoDataFrame(gdf_N20389_line, geometry="geometry")
+                gdf_N20389_line.plot(ax=ax, color="green", markersize=1, label="C172 - N20389")
+            else:
+                gdf_N20389 = gpd.GeoDataFrame(gdf_N20389, geometry="geometry")
+                gdf_N20389.plot(ax=ax, color="green", markersize=1, label="C172 - N20389")
+
     else:
         # Create an empty list to allow for the airports plotter to combine all lists correctly
         airports_N20389 = []
@@ -1503,10 +1534,20 @@ def local_area_map(fleet, area, month):
                 [Point(xy) for xy in zip(df_N182WK["longitude"].astype(float), df_N182WK["latitude"].astype(float))]
             gdf_N182WK = GeoDataFrame(df_N182WK, geometry=geom_N182WK)
 
+
             # define the coordinates initially as 4326 then convert to 3857
             gdf_N182WK.crs = "EPSG:4326"
             gdf_N182WK = gdf_N182WK.to_crs(epsg=3857)
-            gdf_N182WK.plot(ax=ax, color="cyan", markersize=5, label="C182 - N182WK")
+
+
+            if option == "Lines":
+                gdf_N182WK_line = gdf_N182WK.groupby(["ID"])["geometry"].apply(lambda x: LineString(x.tolist()))
+                gdf_N182WK_line = gpd.GeoDataFrame(gdf_N182WK_line, geometry="geometry")
+                gdf_N182WK_line.plot(ax=ax, color="orange", markersize=1, label="C182 - N182WK")
+            else:
+                gdf_N182WK = gpd.GeoDataFrame(gdf_N182WK, geometry="geometry")
+                gdf_N182WK.plot(ax=ax, color="orange", markersize=1, label="C182 - N182WK")
+
     else:
         # Create an empty list to allow for the airports plotter to combine all lists correctly
         airports_N182WK = []
@@ -1521,10 +1562,20 @@ def local_area_map(fleet, area, month):
                 [Point(xy) for xy in zip(df_N58843["longitude"].astype(float), df_N58843["latitude"].astype(float))]
             gdf_N58843 = GeoDataFrame(df_N58843, geometry=geom_N58843)
 
+
             # define the coordinates initially as 4326 then convert to 3857
             gdf_N58843.crs = "EPSG:4326"
             gdf_N58843 = gdf_N58843.to_crs(epsg=3857)
-            gdf_N58843.plot(ax=ax, color="grey", markersize=5, label="C182 - N58843")
+
+
+            if option == "Lines":
+                gdf_N58843_line = gdf_N58843.groupby(["ID"])["geometry"].apply(lambda x: LineString(x.tolist()))
+                gdf_N58843_line = gpd.GeoDataFrame(gdf_N58843_line, geometry="geometry")
+                gdf_N58843_line.plot(ax=ax, color="grey", markersize=1, label="C182 - N58843")
+            else:
+                gdf_N58843 = gpd.GeoDataFrame(gdf_N58843, geometry="geometry")
+                gdf_N58843.plot(ax=ax, color="grey", markersize=1, label="C182 - N58843")
+
     else:
         # Create an empty list to allow for the airports plotter to combine all lists correctly
         airports_N58843 = []
@@ -1539,10 +1590,20 @@ def local_area_map(fleet, area, month):
                 [Point(xy) for xy in zip(df_N82145["longitude"].astype(float), df_N82145["latitude"].astype(float))]
             gdf_N82145 = GeoDataFrame(df_N82145, geometry=geom_N82145)
 
+
             # define the coordinates initially as 4326 then convert to 3857
             gdf_N82145.crs = "EPSG:4326"
             gdf_N82145 = gdf_N82145.to_crs(epsg=3857)
-            gdf_N82145.plot(ax=ax, color="black", markersize=5, label="Saratoga - N82145")
+
+
+            if option == "Lines":
+                gdf_N82145_line = gdf_N82145.groupby(["ID"])["geometry"].apply(lambda x: LineString(x.tolist()))
+                gdf_N82145_line = gpd.GeoDataFrame(gdf_N82145_line, geometry="geometry")
+                gdf_N82145_line.plot(ax=ax, color="black", markersize=1, label="Saratoga - N82145")
+            else:
+                gdf_N82145 = gpd.GeoDataFrame(gdf_N82145, geometry="geometry")
+                gdf_N82145.plot(ax=ax, color="black", markersize=1, label="Saratoga - N82145")
+
     else:
         # Create an empty list to allow for the airports plotter to combine all lists correctly
         airports_N82145 = []
@@ -1557,10 +1618,20 @@ def local_area_map(fleet, area, month):
                 [Point(xy) for xy in zip(df_N4803P["longitude"].astype(float), df_N4803P["latitude"].astype(float))]
             gdf_N4803P = GeoDataFrame(df_N4803P, geometry=geom_N4803P)
 
+
             # define the coordinates initially as 4326 then convert to 3857
             gdf_N4803P.crs = "EPSG:4326"
             gdf_N4803P = gdf_N4803P.to_crs(epsg=3857)
-            gdf_N4803P.plot(ax=ax, color="magenta", markersize=5, label="Debonair - N4803P")
+
+
+            if option == "Lines":
+                gdf_N4803P_line = gdf_N4803P.groupby(["ID"])["geometry"].apply(lambda x: LineString(x.tolist()))
+                gdf_N4803P_line = gpd.GeoDataFrame(gdf_N4803P_line, geometry="geometry")
+                gdf_N4803P_line.plot(ax=ax, color="magenta", markersize=1, label="Debonair - N4803P")
+            else:
+                gdf_N4803P = gpd.GeoDataFrame(gdf_N4803P, geometry="geometry")
+                gdf_N4803P.plot(ax=ax, color="magenta", markersize=1, label="Debonair - N4803P")
+
     else:
         # Create an empty list to allow for the airports plotter to combine all lists correctly
         airports_N4803P = []
@@ -1881,8 +1952,11 @@ def main():
         # get the current month from the month combobox
         sel_month = month_cb.get()
 
+        # get the plotting option (points or strings) from the sel_options radio buttons
+        sel_option = selected_option.get()
+
         # call the grapher
-        local_area_map(sel_aircraft, states_area, sel_month)
+        local_area_map(sel_aircraft, states_area, sel_month, sel_option)
 
         # log the commands
         log_output.configure(state="normal")  # allow editing of the log
@@ -2191,6 +2265,25 @@ def main():
     midwest_button.grid(
         column=2,
         row=7)
+
+    # RADIO BUTTON: Select between points and lines (graphing)
+    selected_option = tk.StringVar()
+    selected_option.set("Points")  # Default radio button option
+    options = (("Points", "Points"),
+               ("Lines", "Lines"))
+
+    for i, option in enumerate(options):
+        rad_opt = ttk.Radiobutton(
+            root,
+            text=option[0],
+            value=option[1],
+            variable=selected_option,
+        )
+
+        rad_opt.grid(
+            column=1,
+            row=7 + i
+        )
 
     # Execute
     Thread(target=root.mainloop()).start()
