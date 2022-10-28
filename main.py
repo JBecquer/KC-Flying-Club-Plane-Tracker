@@ -24,7 +24,7 @@ from tkinter.scrolledtext import ScrolledText
 from time import sleep
 from datetime import datetime
 from threading import Thread
-import contextily as cx
+import contextily as ctx
 
 
 # create logger (copied from https://docs.python.org/3/howto/logging.html#logging-advanced-tutorial)
@@ -1008,6 +1008,7 @@ def calculate_stats(fleet, month):
         :rtype: float(2)
         """
 
+        # TODO dist_travelled needs to be reviewed. Output is not correct at all... showing 10,000 miles travelled
         def lat_long_dist(lat1, lat2, lon1, lon2):
             """
             Calculate the distance between 2 sets of lat/long coordinates using the Haversine formula
@@ -1412,7 +1413,7 @@ def airports_plotter(aircraft, month):
 
 def local_area_map(fleet, month, option):
     """Use the lat/long data to plot a composite map of the KC area
-    # TODO ADD DOCSTRING TO LOCAL_AREA_MAP
+    TODO ADD DOCSTRING TO LOCAL_AREA_MAP
     """
 
     # Define the map
@@ -1639,7 +1640,7 @@ def local_area_map(fleet, month, option):
     else:
         plt.title(f"2022 flight history")
 
-    cx.add_basemap(ax)
+    ctx.add_basemap(ax)
 
     plt.show()
     pass
@@ -1897,24 +1898,6 @@ def main():
             return
         sel_aircraft_str = "   ".join(sel_aircraft)
 
-        # # Call graphing function
-        # states_list = ["AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS",
-        #                "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY",
-        #                "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV",
-        #                "WI", "WY"]
-        # states_area = states_text.get("1.0", "end")
-        #
-        # try:
-        #     states_area = states_area.split(",")
-        #     states_area = [x.strip() for x in states_area]
-        #     for state in states_area:
-        #         if state not in states_list:
-        #             logger.warning(f" State ({state}) entered not in the states_list (graph_aircraft)")
-        #             return
-        # except Exception as e:
-        #     logger.warning(f" Something went wrong with graph_aircraft, splitting of the states.")
-        #     logger.warning(f" Error: {e}")
-
         # get the current month from the month combobox
         sel_month = month_cb.get()
 
@@ -2073,12 +2056,6 @@ def main():
         log_output.see(tk.END)
         log_output.configure(state="disabled")  # disable editing of the log
 
-    def midwest_state_acronyms():
-        """
-        Enter Midwestern state acronyms into the state plotter text box
-        """
-        states_text.insert("1.0", "MO, KS, IA, MN, IL, WI, NE")
-
     # define the row where the main buttons are
     bot_button_row = 4
 
@@ -2204,18 +2181,10 @@ def main():
         sticky="E",
         pady=15)
 
-    # TEXT : States text input
-    states_text = tk.Text(root, height=2, width=60)
-    states_text.grid(
-        column=2,
-        row=6,
-        rowspan=1,
-        columnspan=2)
-
-    # BUTTON: Create local graph
+    # BUTTON: Create graph (not local)
     aircraft_button = ttk.Button(
         root,
-        text="Create local graph",
+        text="Create graph",
         command=lambda: graph_aircraft())
     aircraft_button.grid(
         column=1,
@@ -2223,14 +2192,6 @@ def main():
         sticky="E",
         pady=15)
 
-    # BUTTON: Enter midwestern states in local graph text box
-    midwest_button = ttk.Button(
-        root,
-        text="Midwest States",
-        command=lambda: midwest_state_acronyms())
-    midwest_button.grid(
-        column=2,
-        row=7)
 
     # RADIO BUTTON: Select between points and lines (graphing)
     selected_option = tk.StringVar()
