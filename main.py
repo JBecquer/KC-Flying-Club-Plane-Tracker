@@ -1256,30 +1256,6 @@ def calculate_stats(fleet, month):
             airports_visited("N4803P", month)
 
 
-def state_plotter(states, us_map=True):
-    """
-    Return ax to be used with geopandas
-    :param states: States to be mapped
-    :param us_map: True if CONUS, False if "zoomed in". True will result in "highlighted" states
-    :return:
-    """
-    usa = gpd.read_file("states_21basic/states.shp")
-    usa = usa.to_crs(epsg=3857)
-
-    fig, ax = plt.subplots(figsize=(10, 10))
-
-    if us_map:
-        usa[1:50].plot(ax=ax, alpha=0.3)
-
-        for n in states:
-            usa[usa.STATE_ABBR == f"{n}"].plot(ax=ax, edgecolor="y", linewidth=2)
-
-    elif not us_map:
-        for n in states:
-            usa[usa.STATE_ABBR == f"{n}"].plot(ax=ax, edgecolor="y", linewidth=2, alpha=0.3, linestyle="--")
-    return ax
-
-
 def airport_coordinates(airport):
     """
     Get the airport code from mySQL. If not available from mySQL, scrape airnav.com and save those coordinates to mySQL
@@ -1434,13 +1410,13 @@ def airports_plotter(aircraft, month):
     return landing_hist_list
 
 
-def local_area_map(fleet, area, month, option):
+def local_area_map(fleet, month, option):
     """Use the lat/long data to plot a composite map of the KC area
     # TODO ADD DOCSTRING TO LOCAL_AREA_MAP
     """
 
     # Define the map
-    ax = state_plotter(area, us_map=False)
+    ax = plt.subplot()
     # hide the x and y-axis labels
     ax.get_xaxis().set_visible(False)
     ax.get_yaxis().set_visible(False)
@@ -1480,7 +1456,6 @@ def local_area_map(fleet, area, month, option):
                 [Point(xy) for xy in zip(df_N3892Q["longitude"].astype(float), df_N3892Q["latitude"].astype(float))]
             gdf_N3892Q = GeoDataFrame(df_N3892Q, geometry=geom_N3892Q)
 
-
             # define the coordinates initially as 4326 then convert to 3857
             gdf_N3892Q.crs = "EPSG:4326"
             gdf_N3892Q = gdf_N3892Q.to_crs(epsg=3857)
@@ -1506,7 +1481,6 @@ def local_area_map(fleet, area, month, option):
             geom_N20389 = \
                 [Point(xy) for xy in zip(df_N20389["longitude"].astype(float), df_N20389["latitude"].astype(float))]
             gdf_N20389 = GeoDataFrame(df_N20389, geometry=geom_N20389)
-
 
             # define the coordinates initially as 4326 then convert to 3857
             gdf_N20389.crs = "EPSG:4326"
@@ -1534,11 +1508,9 @@ def local_area_map(fleet, area, month, option):
                 [Point(xy) for xy in zip(df_N182WK["longitude"].astype(float), df_N182WK["latitude"].astype(float))]
             gdf_N182WK = GeoDataFrame(df_N182WK, geometry=geom_N182WK)
 
-
             # define the coordinates initially as 4326 then convert to 3857
             gdf_N182WK.crs = "EPSG:4326"
             gdf_N182WK = gdf_N182WK.to_crs(epsg=3857)
-
 
             if option == "Lines":
                 gdf_N182WK_line = gdf_N182WK.groupby(["ID"])["geometry"].apply(lambda x: LineString(x.tolist()))
@@ -1562,11 +1534,9 @@ def local_area_map(fleet, area, month, option):
                 [Point(xy) for xy in zip(df_N58843["longitude"].astype(float), df_N58843["latitude"].astype(float))]
             gdf_N58843 = GeoDataFrame(df_N58843, geometry=geom_N58843)
 
-
             # define the coordinates initially as 4326 then convert to 3857
             gdf_N58843.crs = "EPSG:4326"
             gdf_N58843 = gdf_N58843.to_crs(epsg=3857)
-
 
             if option == "Lines":
                 gdf_N58843_line = gdf_N58843.groupby(["ID"])["geometry"].apply(lambda x: LineString(x.tolist()))
@@ -1590,11 +1560,9 @@ def local_area_map(fleet, area, month, option):
                 [Point(xy) for xy in zip(df_N82145["longitude"].astype(float), df_N82145["latitude"].astype(float))]
             gdf_N82145 = GeoDataFrame(df_N82145, geometry=geom_N82145)
 
-
             # define the coordinates initially as 4326 then convert to 3857
             gdf_N82145.crs = "EPSG:4326"
             gdf_N82145 = gdf_N82145.to_crs(epsg=3857)
-
 
             if option == "Lines":
                 gdf_N82145_line = gdf_N82145.groupby(["ID"])["geometry"].apply(lambda x: LineString(x.tolist()))
@@ -1618,11 +1586,9 @@ def local_area_map(fleet, area, month, option):
                 [Point(xy) for xy in zip(df_N4803P["longitude"].astype(float), df_N4803P["latitude"].astype(float))]
             gdf_N4803P = GeoDataFrame(df_N4803P, geometry=geom_N4803P)
 
-
             # define the coordinates initially as 4326 then convert to 3857
             gdf_N4803P.crs = "EPSG:4326"
             gdf_N4803P = gdf_N4803P.to_crs(epsg=3857)
-
 
             if option == "Lines":
                 gdf_N4803P_line = gdf_N4803P.groupby(["ID"])["geometry"].apply(lambda x: LineString(x.tolist()))
@@ -1667,7 +1633,7 @@ def local_area_map(fleet, area, month, option):
         ax.annotate(label, xy=(x, y), xytext=(3, 3), textcoords="offset points", )
 
     # finally, plot
-    plt.legend(loc="upper right")
+    plt.legend(loc="upper left")
     if month != "All":
         plt.title(f"{month} flight history")
     else:
@@ -1931,23 +1897,23 @@ def main():
             return
         sel_aircraft_str = "   ".join(sel_aircraft)
 
-        # Call graphing function
-        states_list = ["AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS",
-                       "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY",
-                       "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV",
-                       "WI", "WY"]
-        states_area = states_text.get("1.0", "end")
-
-        try:
-            states_area = states_area.split(",")
-            states_area = [x.strip() for x in states_area]
-            for state in states_area:
-                if state not in states_list:
-                    logger.warning(f" State ({state}) entered not in the states_list (graph_aircraft)")
-                    return
-        except Exception as e:
-            logger.warning(f" Something went wrong with graph_aircraft, splitting of the states.")
-            logger.warning(f" Error: {e}")
+        # # Call graphing function
+        # states_list = ["AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS",
+        #                "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY",
+        #                "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV",
+        #                "WI", "WY"]
+        # states_area = states_text.get("1.0", "end")
+        #
+        # try:
+        #     states_area = states_area.split(",")
+        #     states_area = [x.strip() for x in states_area]
+        #     for state in states_area:
+        #         if state not in states_list:
+        #             logger.warning(f" State ({state}) entered not in the states_list (graph_aircraft)")
+        #             return
+        # except Exception as e:
+        #     logger.warning(f" Something went wrong with graph_aircraft, splitting of the states.")
+        #     logger.warning(f" Error: {e}")
 
         # get the current month from the month combobox
         sel_month = month_cb.get()
@@ -1956,7 +1922,7 @@ def main():
         sel_option = selected_option.get()
 
         # call the grapher
-        local_area_map(sel_aircraft, states_area, sel_month, sel_option)
+        local_area_map(sel_aircraft, sel_month, sel_option)
 
         # log the commands
         log_output.configure(state="normal")  # allow editing of the log
