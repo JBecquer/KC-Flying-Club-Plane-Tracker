@@ -978,7 +978,7 @@ def db_data_getter(aircraft, month):
     total_df = pd.DataFrame()
 
     # for each piece of history, get the flight data
-    # Set the ID equal to a unique index, to allow seperate flights to have their own line segment (ref: local_area_map)
+    # Set the ID equal to a unique index, to allow seperate flights to have their own line segment (ref: full_area_map)
     # If we don't have this, the data is drawn as a single line which causes "jumping" between multiple flights
     # that aren't ordered together exactly
     try:
@@ -1178,6 +1178,10 @@ def calculate_stats(fleet, month):
                 landing_hist[airport] = 1
             else:
                 landing_hist[airport] += 1
+
+        # Remove UNKW from dictionary
+        if "UNKW" in landing_hist:
+            landing_hist.pop("UNKW")
 
         # sort the airports list
         landing_hist = dict(sorted(landing_hist.items(), key=lambda item: item[1], reverse=True))
@@ -1411,16 +1415,22 @@ def airports_plotter(aircraft, month):
     return landing_hist_list
 
 
-def local_area_map(fleet, month, option):
+def full_area_map(fleet, month, option, local):
     """Use the lat/long data to plot a composite map of the KC area
-    TODO ADD DOCSTRING TO LOCAL_AREA_MAP
+    TODO ADD DOCSTRING TO full_area_map
     """
 
     # Define the map
-    ax = plt.subplot()
-    # hide the x and y-axis labels
-    ax.get_xaxis().set_visible(False)
-    ax.get_yaxis().set_visible(False)
+    if not local:
+        ax = plt.subplot()
+        # hide the x and y-axis labels
+        ax.get_xaxis().set_visible(False)
+        ax.get_yaxis().set_visible(False)
+    else:
+        KC = ctx.Place("Kansas City", zoom=12)
+        # "Loch Lloyd, MO", zoom=9
+        ax = KC.plot()
+        ax.autoscale(False)
 
     # N81673 Archer
     if "N81673" in fleet:
@@ -1640,7 +1650,8 @@ def local_area_map(fleet, month, option):
     else:
         plt.title(f"2022 flight history")
 
-    ctx.add_basemap(ax)
+    if not local:
+        ctx.add_basemap(ax)
 
     plt.show()
     pass
@@ -1883,7 +1894,11 @@ def main():
         #     log_output.see(tk.END)
         #     log_output.configure(state="disabled")  # disable editing of the log
 
-    def graph_aircraft():
+    def graph_aircraft(map_size):
+        """
+        TODO ADD DOCSTRING
+        :param map_size: "full" or "KC"
+        """
         check_pw()
 
         # get selected indices
@@ -1905,7 +1920,11 @@ def main():
         sel_option = selected_option.get()
 
         # call the grapher
-        local_area_map(sel_aircraft, sel_month, sel_option)
+        if map_size == "full":
+            full_area_map(sel_aircraft, sel_month, sel_option, False)
+        else:
+            full_area_map(sel_aircraft, sel_month, sel_option, True)
+            
 
         # log the commands
         log_output.configure(state="normal")  # allow editing of the log
@@ -2185,17 +2204,27 @@ def main():
     aircraft_button = ttk.Button(
         root,
         text="Create graph",
-        command=lambda: graph_aircraft())
+        command=lambda: graph_aircraft("full"))
     aircraft_button.grid(
         column=1,
         row=6,
         sticky="E",
         pady=15)
 
+    # BUTTON: Create local KC graph
+    aircraft_button = ttk.Button(
+        root,
+        text="Create KC graph",
+        command=lambda: graph_aircraft("KC"))
+    aircraft_button.grid(
+        column=2,
+        row=6,
+        sticky="E",
+        pady=15)
 
     # RADIO BUTTON: Select between points and lines (graphing)
     selected_option = tk.StringVar()
-    selected_option.set("Points")  # Default radio button option
+    selected_option.set("Lines")  # Default radio button option
     options = (("Points", "Points"),
                ("Lines", "Lines"))
 
