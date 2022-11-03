@@ -225,7 +225,7 @@ def unkw_airport_finder(url, orig_flag=False):
     """
     # We could try different methods here... most simple would be to open the URL and have the user determine the
     # airport identifier code manually. Least likely to introduce errors or unneeded complexity
-
+    # TODO UPDATE FUNCTION TO ELABORATE IF IT IS ORIGIN OR ARRIVAL
     # Establish new TKinter window
     finder = tk.Tk()
     finder.title("UNKW Airport Finder")
@@ -1168,7 +1168,7 @@ def calculate_stats(fleet, month):
 
         # exit condition if no flight history
         if not hist or len(hist) == 0:
-            logger.info(f" Possible error condition")
+            logger.info(f" Possible error condition (airports_visited)")
             return
 
         # Find the number of unique airports and save to dictionary, count each time the airport occurs
@@ -1395,10 +1395,11 @@ def airports_plotter(aircraft, month):
         logger.critical(e)
         sys.exit(e)
 
-    # exit condition if no flight history
+    # exit condition if no flight history. Return "UNKW" to avoid trying to concatenate empty lists
     if not hist or len(hist) == 0:
-        logger.info(f" Possible error condition")
-        return
+        logger.debug(f" {aircraft} has no flight history!")
+        landing_hist_list = ["UNKW"]
+        return landing_hist_list
 
     # Find the number of unique airports and save to dictionary, count each time the airport occurs
     landing_hist = {}
@@ -1622,6 +1623,7 @@ def full_area_map(fleet, month, option, local):
                               airports_N82145 +
                               airports_N4803P))
     # Remove UNKW from list
+    # This catches both UNKW airports as well as aircraft that returned "UNKW" because the flight history was empty
     if "UNKW" in airports_fleet:
         airports_fleet.remove("UNKW")
 
