@@ -1878,15 +1878,16 @@ def main():
             logger.info(f" ~~~~~~~~~~~~~ {aircraft} ~~~~~~~~~~~~~")
             Thread(target=db_data_saver(aircraft)).start()
             logger.info(f"\n")
-            # if aircraft == selected_aircraft[-1]:
-            #     log_output.configure(state="normal")  # allow editing of the log
-            #     log_output.insert(tk.END, f"Data gathering completed!\n\n")
-            #     aircraft_progress.destroy()
-            #     # Always scroll to the index: "end"
-            #     log_output.see(tk.END)
-            #     log_output.configure(state="disabled")  # disable editing of the log
-            # else:
-            #     sleep(1)
+            if aircraft == selected_aircraft[-1]:
+                log_output.configure(state="normal")  # allow editing of the log
+                log_output.insert(tk.END, f"Data gathering completed!\n\n")
+                logger.info(" Data gathering completed!")
+                # aircraft_progress.destroy()
+                # Always scroll to the index: "end"
+                log_output.see(tk.END)
+                log_output.configure(state="disabled")  # disable editing of the log
+            else:
+                sleep(1)
 
         # def data_cancel():
         #     log_output.configure(state="normal")  # allow editing of the log
