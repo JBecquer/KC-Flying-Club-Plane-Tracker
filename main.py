@@ -225,7 +225,7 @@ def unkw_airport_finder(url, orig_flag=False):
     """
     # We could try different methods here... most simple would be to open the URL and have the user determine the
     # airport identifier code manually. Least likely to introduce errors or unneeded complexity
-    # TODO UPDATE FUNCTION TO ELABORATE IF IT IS ORIGIN OR ARRIVAL
+
     # Establish new TKinter window
     finder = tk.Tk()
     finder.title("UNKW Airport Finder")
@@ -237,11 +237,19 @@ def unkw_airport_finder(url, orig_flag=False):
     finder.update()
     finder.attributes('-topmost', False)
 
-    # SPACER
-    spacer1 = tk.Label(finder, text="")
-    spacer1.grid(
+    # Determine destination or origin, used to label the textbox. Helps when looking at FlightAware tables
+    if not orig_flag:
+        orig_dest = "ORIGIN"
+    else:
+        orig_dest = "DESTINATION"
+
+    # LABEL: Origin or destination
+    orig_label = tk.Label(finder, text=orig_dest, font=("Helvetica", 12, "bold"))
+    orig_label.grid(
         row=0,
-        column=0)
+        column=1,
+        columnspan=4,
+        pady=2)
 
     # LABEL: url copy
     url_label = ttk.Label(finder, text="Copy the below URL:")
