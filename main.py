@@ -28,10 +28,12 @@ import contextily as ctx
 
 
 # create logger (copied from https://docs.python.org/3/howto/logging.html#logging-advanced-tutorial)
-# logging.basicConfig(filename="logname.txt",
-#                     filemode="w+",
-#                     format="%(levelname)s - %(message)s",
-#                     level=logging.DEBUG)
+
+# Create a logfile. Currently gets overwritten with each run.
+logging.basicConfig(filename="logname.txt",
+                    filemode="w+",
+                    format="%(levelname)s - %(message)s",
+                    level=logging.DEBUG)
 
 logger = logging.getLogger('Main')
 logger.setLevel(logging.INFO)
@@ -53,8 +55,9 @@ destination_fixed = "UNKW"
 
 def mysql_connect(database):
     """
-    Connect to MySQL server, and grab database using aircraft ID
-    :param database: Name of the database to be accessed
+    Connect to MySQL server, and grab schema using aircraft ID
+
+    :param database: Name of the schema (database) to be accessed
     :type database: str
     :return: mysql.connector.connect() is pass, Exception if fail
     """
@@ -75,9 +78,12 @@ def mysql_connect(database):
 
 def between_parentheses(s):
     """
-    Take in a string and return what is in-between the parentheses.  # TODO CREATE ERROR CONDITIONS
+    Take in a string and return what is in-between the parentheses.
+    Used to extract Origin-Departure from Flightaware code.
+    # TODO CREATE ERROR CONDITIONS
+
     :param s: string containing closed parentheses.
-    :return: string contained between the parentheses.
+    :return: string contained between the parentheses. ex: MO3-KOJC
     """
     res = []
     # Extracting from: Flight Track Log ✈ N81673 22-Jul-2022 (MO3-KOJC) - FlightAware
@@ -95,6 +101,7 @@ def between_parentheses(s):
 def convert24(str1):
     """
     Convert from 12-hour to 24-hour format
+
     :param str1: 12-hour time string with AM/PM suffix
     :return: 24-hour format (HH:MM:SS)
     :rtype: str
@@ -121,8 +128,11 @@ def convert_date(s):
     """
     Take a date format "DD-MMM-YYYY" where MMM is a 3-digit month code. Convert to YYYY-MM-DD for MySQL DATE format
     ex: 17-JUL-2022 converts to 2022-07-17
+
     :param s: input date string DD-MMM-YYYY "17-JUL-2022"
+    :type s: str
     :return: output date string YYYY-MM-DD "2022-07-17"
+    :rtype: str
     """
     if len(s) != 11:
         logger.critical(f" The input string {s} is not the correct length! ({len(s)} != 11)")
@@ -158,8 +168,13 @@ def convert_date(s):
 
 def check_date(aircraft, check_date):
     """
-    Compare the dates between date_last_ran in MySQL and the history grabbed from flight aware
+    Compare the dates between date_last_ran in MySQL and the history grabbed from flightaware.
+    This will be used to determine which flights need to be added to the database.
+
+    :type aircraft: str
+    :type check_date: str
     :return: Returns FALSE if date is older than date_last_ran, TRUE if date is sooner than date_last_ran
+    :rtype Boolean
     """
 
     # Establish connection with MySQL and init cursor
@@ -187,13 +202,18 @@ def check_date(aircraft, check_date):
 
 def date_last_ran(tail_num):
     """
-    Save the date that the aircraft last successfully ran and saved. This date will be referenced by future runs.
+    Save the date that the aircraft last successfully ran and saved to MySQL.
+    This date will be referenced by future runs.
+
+    :type tail_num: str
+    :rtype: None
     """
 
     # Establish connection with MySQL and init cursor
     db = mysql_connect("date_last_ran")
     mycursor = db.cursor()
 
+    # 11/24/22 Commented out because the table should aready exist. Keeping as archive.
     # # Create base table
     # mycursor.execute("CREATE TABLE IF NOT EXISTS date_last_ran.fleet("
     #                  "aircraft VARCHAR(10), "
@@ -217,11 +237,15 @@ def date_last_ran(tail_num):
 
 def unkw_airport_finder(url, orig_flag=False):
     """
-    Determine which airport is the origin/destination airport. Used to handle situations where flightaware gives
-    any response other than the airport identifier (e.g. lat/long coordinates or other misc. code)
-    If origin airport, set TRUE
+    Determine which airport is the origin/destination airport by prompting for user input.
+    Used to handle situations where flightaware gives any response other than the airport identifier
+    (e.g. lat/long coordinates or other misc. code)
+    If origin airport, set orig_flag = TRUE
+
+    :type url: str
+    :type orig_flag: bool
     :rtype: str
-    :return: ICAO airport identifier code. "UNKW" if still unable to determine
+    :return: ICAO airport identifier code. Returns "UNKW" if user is unable to determine.
     """
     # We could try different methods here... most simple would be to open the URL and have the user determine the
     # airport identifier code manually. Least likely to introduce errors or unneeded complexity
@@ -323,10 +347,12 @@ def unkw_airport_finder(url, orig_flag=False):
 
     def done_button():
         """
-        Confirm whether the entered airport code was correct. Buttons to select confirm or cancel.
+        Confirmation window  to determine whether the entered airport code was correct.
+        Contains buttons to select "confirm" or "cancel".
+
         If confirm: return ICAO code as string
+
         If cancel: destroy confirm window
-        :return:
         """
         airport_code = code_input.get("1.0", "end")
 
@@ -385,6 +411,8 @@ def unkw_airport_finder(url, orig_flag=False):
                 """
                 Confirmation that the ICAO code is correct, return new airport code to main.
                 Close confirm window and finder window
+
+                :type code_in: str
                 :return: ICAO code
                 :rtype: str
                 """
@@ -399,6 +427,13 @@ def unkw_airport_finder(url, orig_flag=False):
                 finder.quit()
 
     def skip_button():  # TODO CHANGE THIS TO ACTUALLY SKIP, INSTEAD OF RETURNING UNKW?
+        """
+        Decided to make this return "UNKW" to handle situations where flightaware dropped covered and created a new
+        flight entry. No airport should be added in these cases, and UNKW will be filtered out by airport_plotter.
+
+        :return: "UNKW"
+        :rtype: str
+        """
         # Establish new TKinter window
         skip_win = tk.Toplevel()
         skip_win.title("Confirm")
@@ -441,6 +476,7 @@ def unkw_airport_finder(url, orig_flag=False):
         def confirm_code():
             """
             Used when an airport code cannot be determined or simply wishing to skip.
+
             :return: UNKW
             :rtype: str
             """
@@ -452,7 +488,7 @@ def unkw_airport_finder(url, orig_flag=False):
 
     def cancel_button():
         """
-        Bailout button. Will completely exit the code.
+        Bailout button. Will exit the entire code.
         """
         # Establish new TKinter window
         cancel_win = tk.Toplevel()
@@ -547,10 +583,12 @@ def unkw_airport_finder(url, orig_flag=False):
 def flightaware_history(aircraft):
     """
     Grab the aircraft history from flight aware and return pandas dataframe containing history data.
+
     :param aircraft: aircraft ID. ex: N182WK
     :type aircraft: str
     :return: pandas df = [date, route, dept_time, time_aloft, URL]
     """
+    # requests headers
     headers = {
         'User_Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
                       'Chrome/103.0.0.0 Safari/537.36',
@@ -582,7 +620,7 @@ def flightaware_history(aircraft):
             logger.critical(f" Error finding aircraft history table on FlightAware! (flightaware_history)")
             sys.exit(e)
 
-        # Define of the dataframe
+        # Define the dataframe
         df = pd.DataFrame(columns=["date", "route", "dept_time", "time_aloft", "url"])
 
         # Scrape data and save to panda dataframe
@@ -635,7 +673,9 @@ def flightaware_history(aircraft):
                     destination = between_parentheses(columns[3].text)
                 route = origin + "-" + destination
 
-                # # Reset the global variables for the next run to avoid any potential runaway errors with incorrect codes
+                # 11/24/22 commented out. Not sure if this is needed. Keeping for achive/future testing
+                # # Reset the global variables for the next run to avoid any potential
+                # runaway errors with incorrect codes
                 # global origin_fixed, destination_fixed
                 # origin_fixed = "UNKW"
                 # destination_fixed = "UNKW"
@@ -676,6 +716,7 @@ def flightaware_history(aircraft):
 def flightaware_getter(url):
     """
     Web scraping to grab track data from flight aware and save to pandas dataframe
+
     :param url: The url extracted from MySQL flight_history table, EXCLUDING flightaware.com and /track
     example: https://flightaware.com/live/flight/N81673/history/20220715/1927Z/KLXT/KAMW/tracklog
     should be given as: live/flight/N81673/history/20220715/1927Z/KLXT/KAMW
@@ -760,7 +801,10 @@ def flightaware_getter(url):
 def db_data_saver(aircraft):
     """
     Export the web scrapped panda dataframe into MySQL
-    :param aircraft: N# of club aircraft, used for MySQL database name
+
+    :param aircraft: N# of club aircraft, used for MySQL schema name
+    :type aircraft: str
+    :rtype: None
     """
 
     # Get pandas dataframe for plane history [date, route, dept_time, time_aloft, url]
@@ -923,7 +967,12 @@ def db_data_saver(aircraft):
 
 def db_data_getter(aircraft, month):
     """
-    Import the data from MySQL and convert into pandas dataframe
+    Import data from MySQL and convert into pandas dataframe.
+
+    :type aircraft: str
+    :type month: str
+    :param aircraft: N# of club aircraft, used for MySQL schema name
+    :param month: used to filter the schema tables
     :return: pandas dataframe
     """
     # Establish connection with MySQL and init cursor
@@ -1012,6 +1061,8 @@ def calculate_stats(fleet, month):
     def dist_travelled(data_df):
         """
         Calculate the total distance travelled by the aircraft using lat/long data.
+
+        :param data_df: pandas dataframe that contains all of the data
         :return: Total distance travelled in miles
         :rtype: float(2)
         """
@@ -1020,6 +1071,7 @@ def calculate_stats(fleet, month):
         def lat_long_dist(lat1, lat2, lon1, lon2):
             """
             Calculate the distance between 2 sets of lat/long coordinates using the Haversine formula
+
             :param lat1: Latitude point 1
             :param lat2: Latitude point 2
             :param lon1: Longitude point 1
@@ -1062,7 +1114,9 @@ def calculate_stats(fleet, month):
     def time_aloft(aircraft, month):
         """
         Calculate the max time aloft and average time aloft
-        :return: total time aloft, average time aloft
+
+        :return: [total time aloft, average time aloft]
+        :rtype: tuple
         """
 
         db = mysql_connect(aircraft)
@@ -1132,7 +1186,11 @@ def calculate_stats(fleet, month):
         return time_aloft, avg_aloft
 
     def airports_visited(aircraft, month):
-        """Determine the airports visited"""
+        """
+        Determine the airports visited
+
+        :rtype: None
+        """
         # Establish connection with MySQL and init cursor
         db = mysql_connect(aircraft)
         mycursor = db.cursor()
@@ -1271,10 +1329,12 @@ def calculate_stats(fleet, month):
 
 def airport_coordinates(airport):
     """
-    Get the airport code from mySQL. If not available from mySQL, scrape airnav.com and save those coordinates to mySQL
+    Get the airport code from mySQL. If not available from mySQL: scrape airnav.com and save those coordinates to mySQL
     for future use.
+
     :param airport: ICAO airport code
-    :return: set of lat/long coordinates
+    :return: set of lat/long coordinates and the airport code [lat, long, airport]
+    :rtype: list[str, str, str]
     """
     # Establish connection with MySQL and init cursor
     db = mysql_connect("airport_coords")
@@ -1362,7 +1422,12 @@ def airport_coordinates(airport):
 
 
 def airports_plotter(aircraft, month):
-    """Determine the airports visited specifically to be used for plotting in Geopandas"""
+    """
+    Determine the airports visited specifically to be used for plotting in Geopandas
+
+    :return: list of airport codes
+    :rtype: list
+    """
     # Establish connection with MySQL and init cursor
     db = mysql_connect(aircraft)
     mycursor = db.cursor()
@@ -1425,11 +1490,22 @@ def airports_plotter(aircraft, month):
 
 
 def full_area_map(fleet, month, option, local):
-    """Use the lat/long data to plot a composite map of the KC area
-    TODO ADD DOCSTRING TO full_area_map
+    """
+    Use the lat/long data to plot a composite map of the KC area
+
+    :param fleet: list of aircraft that will be plotted.
+    :type fleet: list
+    :param month: month of data that will be pulled my MySQL.
+    :type month: str
+    :param option: "Points" or "Lines", to determine the graphing option.
+    :type option: str
+    :param local: False = total area map, True = Local KC map
+    :type local: bool
+
+    :rtype: None
     """
 
-    # Define the map
+    # Define the map size
     if not local:
         ax = plt.subplot()
         # hide the x and y-axis labels
@@ -1834,6 +1910,7 @@ def main():
 
         selected_aircraft_str = "\n".join(selected_aircraft)
 
+        # 11/24/22 Progress bar needs to be fixed. Need to figure out proper threading.
         # # create message box that contains a progress bar on the status of the fleet
         # aircraft_progress = tk.Toplevel(root)
         # aircraft_progress.title("Data Gathering Progress")
@@ -1907,8 +1984,10 @@ def main():
 
     def graph_aircraft(map_size):
         """
-        TODO ADD DOCSTRING
+        Gathers all of the tkinter elements to provide input to called function: full_area_map
+
         :param map_size: "full" or "KC"
+        :type map_size: str
         """
         check_pw()
 
@@ -1935,7 +2014,6 @@ def main():
             full_area_map(sel_aircraft, sel_month, sel_option, False)
         else:
             full_area_map(sel_aircraft, sel_month, sel_option, True)
-            
 
         # log the commands
         log_output.configure(state="normal")  # allow editing of the log
@@ -2252,7 +2330,7 @@ def main():
             row=7 + i
         )
 
-    # Execute
+    # Execute the root window
     Thread(target=root.mainloop()).start()
 
     logger.info(" Code complete.")
