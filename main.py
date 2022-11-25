@@ -29,11 +29,13 @@ import contextily as ctx
 
 # create logger (copied from https://docs.python.org/3/howto/logging.html#logging-advanced-tutorial)
 
+# 11/24/22 commented out because it is not currently useful.
+# Currently this pulls in logs from all sources, not just main. Need to investigate solution
 # Create a logfile. Currently gets overwritten with each run.
-logging.basicConfig(filename="logname.txt",
-                    filemode="w+",
-                    format="%(levelname)s - %(message)s",
-                    level=logging.DEBUG)
+# logging.basicConfig(filename="logname.txt",
+#                     filemode="w+",
+#                     format="%(levelname)s - %(message)s",
+#                     level=logging.DEBUG)
 
 logger = logging.getLogger('Main')
 logger.setLevel(logging.INFO)
@@ -166,13 +168,13 @@ def convert_date(s):
         sys.exit(" Invalid date code! (convert_date)")
 
 
-def check_date(aircraft, check_date):
+def check_date(aircraft, ch_date):
     """
     Compare the dates between date_last_ran in MySQL and the history grabbed from flightaware.
     This will be used to determine which flights need to be added to the database.
 
     :type aircraft: str
-    :type check_date: str
+    :type ch_date: str
     :return: Returns FALSE if date is older than date_last_ran, TRUE if date is sooner than date_last_ran
     :rtype Boolean
     """
@@ -184,7 +186,7 @@ def check_date(aircraft, check_date):
     # Check if the date of this flight occurred before date_last_ran.
     # If true, skip this flight and continue. Else continue with the code
     # First, convert the above string "date" into a datetime date
-    date_conv = datetime.strptime(check_date, "%Y-%m-%d")
+    date_conv = datetime.strptime(ch_date, "%Y-%m-%d")
     date_conv = date_conv.date()  # convert datetime.datetime into datetime.date
 
     mycursor.execute(f"SELECT date FROM fleet WHERE aircraft = \"{aircraft}\"")
@@ -426,7 +428,7 @@ def unkw_airport_finder(url, orig_flag=False):
                 finder.destroy()
                 finder.quit()
 
-    def skip_button():  # TODO CHANGE THIS TO ACTUALLY SKIP, INSTEAD OF RETURNING UNKW?
+    def skip_button():
         """
         Decided to make this return "UNKW" to handle situations where flightaware dropped covered and created a new
         flight entry. No airport should be added in these cases, and UNKW will be filtered out by airport_plotter.
@@ -675,7 +677,7 @@ def flightaware_history(aircraft):
 
                 # 11/24/22 commented out. Not sure if this is needed. Keeping for achive/future testing
                 # # Reset the global variables for the next run to avoid any potential
-                # runaway errors with incorrect codes
+                # # runaway errors with incorrect codes
                 # global origin_fixed, destination_fixed
                 # origin_fixed = "UNKW"
                 # destination_fixed = "UNKW"
@@ -1910,56 +1912,57 @@ def main():
 
         selected_aircraft_str = "\n".join(selected_aircraft)
 
-        # 11/24/22 Progress bar needs to be fixed. Need to figure out proper threading.
-        # # create message box that contains a progress bar on the status of the fleet
-        # aircraft_progress = tk.Toplevel(root)
-        # aircraft_progress.title("Data Gathering Progress")
-        # aircraft_progress.resizable(False, False)
-        #
-        # # Bring the window to the top of the screen
-        # aircraft_progress.attributes('-topmost', True)
-        # aircraft_progress.update()
-        # aircraft_progress.attributes('-topmost', False)
-        #
-        # # Position message box to be coordinated with the root window
-        # root_x = root.winfo_rootx()
-        # root_y = root.winfo_rooty()
-        # win_x = root_x + 250
-        # win_y = root_y + 50
-        # aircraft_progress.geometry(f'+{win_x}+{win_y}')
-        #
-        # # Configure columns/rows
-        # aircraft_progress.columnconfigure(1, weight=1)
-        # aircraft_progress.rowconfigure(1, weight=1)
-        #
-        # # create the label on the message box
-        # prog_msg = tk.Label(aircraft_progress,
-        #                     text=f" Getting aircraft data for: \n{selected_aircraft_str}")
-        # prog_msg.grid(column=1, row=0)
-        #
-        # # create the progressbar
-        # pb = ttk.Progressbar(
-        #     aircraft_progress,
-        #     orient='horizontal',
-        #     mode='indeterminate',
-        #     length=280)
-        #
-        # # place the progressbar
-        # pb.grid(column=1, row=1, columnspan=2, padx=10, pady=20)
-        # pb.start()
-        #
-        # # BUTTON: cancel data gathering
-        # data_cancel_button = ttk.Button(
-        #     aircraft_progress,
-        #     text="Cancel",
-        #     command=lambda: data_cancel())
-        # data_cancel_button.grid(
-        #     column=1,
-        #     row=2)
+        # create message box that contains a progress bar on the status of the fleet
+        aircraft_progress = tk.Toplevel(root)
+        aircraft_progress.title("Data Gathering Progress")
+        aircraft_progress.resizable(False, False)
 
-        # TODO THREADING
+        # Bring the window to the top of the screen
+        aircraft_progress.attributes('-topmost', True)
+        aircraft_progress.update()
+        aircraft_progress.attributes('-topmost', False)
+
+        # Position message box to be coordinated with the root window
+        root_x = root.winfo_rootx()
+        root_y = root.winfo_rooty()
+        win_x = root_x + 250
+        win_y = root_y + 50
+        aircraft_progress.geometry(f'+{win_x}+{win_y}')
+
+        # Configure columns/rows
+        aircraft_progress.columnconfigure(1, weight=1)
+        aircraft_progress.rowconfigure(1, weight=1)
+
+        # create the label on the message box
+        prog_msg = tk.Label(aircraft_progress,
+                            text=f" Getting aircraft data for: \n{selected_aircraft_str}")
+        prog_msg.grid(column=1, row=0)
+
+        # create the progressbar
+        pb = ttk.Progressbar(
+            aircraft_progress,
+            orient='horizontal',
+            mode='indeterminate',
+            length=280)
+
+        # place the progressbar
+        pb.grid(column=1, row=1, columnspan=2, padx=10, pady=20)
+        pb.start()
+
+        # BUTTON: cancel data gathering
+        data_cancel_button = ttk.Button(
+            aircraft_progress,
+            text="Cancel",
+            command=lambda: data_cancel())
+        data_cancel_button.grid(
+            column=1,
+            row=2)
+
+        # 11/24/22 TODO threading is not quite working. Progress bar is not progressing, only updating with .update()
         # Call data gathering
         for aircraft in selected_aircraft:
+            aircraft_progress.update_idletasks()
+            aircraft_progress.update()
             logger.info(f" ~~~~~~~~~~~~~ {aircraft} ~~~~~~~~~~~~~")
             Thread(target=db_data_saver(aircraft)).start()
             logger.info(f"\n")
@@ -1967,20 +1970,20 @@ def main():
                 log_output.configure(state="normal")  # allow editing of the log
                 log_output.insert(tk.END, f"Data gathering completed!\n\n")
                 logger.info(" Data gathering completed!")
-                # aircraft_progress.destroy()
+                aircraft_progress.destroy()
                 # Always scroll to the index: "end"
                 log_output.see(tk.END)
                 log_output.configure(state="disabled")  # disable editing of the log
             else:
-                sleep(1)
+                aircraft_progress.after(1000)
 
-        # def data_cancel():
-        #     log_output.configure(state="normal")  # allow editing of the log
-        #     log_output.insert(tk.END, f"Data gathering has been cancelled!\n\n")
-        #     aircraft_progress.destroy()
-        #     # Always scroll to the index: "end"
-        #     log_output.see(tk.END)
-        #     log_output.configure(state="disabled")  # disable editing of the log
+        def data_cancel():
+            log_output.configure(state="normal")  # allow editing of the log
+            log_output.insert(tk.END, f"Data gathering has been cancelled!\n\n")
+            aircraft_progress.destroy()
+            # Always scroll to the index: "end"
+            log_output.see(tk.END)
+            log_output.configure(state="disabled")  # disable editing of the log
 
     def graph_aircraft(map_size):
         """
