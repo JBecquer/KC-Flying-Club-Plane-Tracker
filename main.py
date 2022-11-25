@@ -967,12 +967,13 @@ def db_data_saver(aircraft):
     db.close()
 
 
-def db_data_getter(aircraft, month):
+def db_data_getter(aircraft, month, year):
     """
     Import data from MySQL and convert into pandas dataframe.
 
     :type aircraft: str
     :type month: str
+    :type year: int
     :param aircraft: N# of club aircraft, used for MySQL schema name
     :param month: used to filter the schema tables
     :return: pandas dataframe
@@ -1013,12 +1014,17 @@ def db_data_getter(aircraft, month):
 
     # Use the flight history table
     try:
-        if month != "All":
+        if month != "All" and year != "All":
             mycursor.execute(f"SELECT * FROM flight_history "
-                             f"WHERE month(date)={month} "
+                             f"WHERE month(date)={month} and year(date)={year} "
+                             f"ORDER BY date ASC")
+        elif year != "All":
+            mycursor.execute(f"SELECT * FROM flight_history "
+                             f"WHERE year(date)={year} "
                              f"ORDER BY date ASC")
         else:
-            mycursor.execute(f"SELECT * FROM flight_history")
+            mycursor.execute(f"SELECT * FROM flight_history "
+                             f"ORDER BY date ASC")
         hist = []
         for x in mycursor:
             # convert DATE format to string with underscores to allow to be used as table name
@@ -1057,8 +1063,14 @@ def db_data_getter(aircraft, month):
     return total_df
 
 
-def calculate_stats(fleet, month):
-    """ Calculate various stats related to the aircraft's history"""
+def calculate_stats(fleet, month, year):
+    """
+    Calculate various stats related to the aircraft's history
+
+    :type fleet: list
+    :type month: str
+    :type year: int
+    """
 
     def dist_travelled(data_df):
         """
@@ -1113,7 +1125,7 @@ def calculate_stats(fleet, month):
         print(f" The total distance travelled was {round(total_dist, 2)} Miles")
         return total_dist
 
-    def time_aloft(aircraft, month):
+    def time_aloft(aircraft, month, year):
         """
         Calculate the max time aloft and average time aloft
 
@@ -1145,11 +1157,14 @@ def calculate_stats(fleet, month):
 
         # Use the flight history table
         try:
-            if month != "All":
+            if month != "All" and year != "All":
                 mycursor.execute(f"SELECT time_aloft FROM {aircraft}.flight_history "
-                                 f"WHERE month(date)={month}")
+                                 f"WHERE month(date)={month} and year(date)={year}")
+            elif year != "All":
+                mycursor.execute(f"SELECT time_aloft FROM {aircraft}.flight_history "
+                                 f"WHERE year(date)={year}")
             else:
-                mycursor.execute(f"SELECT time_aloft FROM flight_history")
+                mycursor.execute(f"SELECT time_aloft FROM {aircraft}.flight_history")
 
         except Exception as e:
             db.close()
@@ -1187,7 +1202,7 @@ def calculate_stats(fleet, month):
 
         return time_aloft, avg_aloft
 
-    def airports_visited(aircraft, month):
+    def airports_visited(aircraft, month, year):
         """
         Determine the airports visited
 
@@ -1217,11 +1232,15 @@ def calculate_stats(fleet, month):
             month = month_dates[month]
 
         try:
-            if month != "All":
-                mycursor.execute(f"SELECT * FROM flight_history "
-                                 f"WHERE month(date)={month}")
+            if month != "All" and year != "All":
+                mycursor.execute(f"SELECT * FROM {aircraft}.flight_history "
+                                 f"WHERE month(date)={month} and year(date)={year}")
+            elif year != "All":
+                mycursor.execute(f"SELECT * FROM {aircraft}.flight_history "
+                                 f"WHERE year(date)={year}")
             else:
-                mycursor.execute(f"SELECT * FROM flight_history")
+                mycursor.execute(f"SELECT * FROM {aircraft}.flight_history")
+
             hist = []
             for x in mycursor:
                 # extract the route information, using the destination as the airport used for graphing/stats
@@ -1256,77 +1275,77 @@ def calculate_stats(fleet, month):
         print(f" Trips to the following airports:")
         print(landing_hist)
 
-    print(f" ~~~~~~~~~~~~~~~~~ {month} stat line-up ~~~~~~~~~~~~~~~~~")
+    print(f" ~~~~~~~~~~~~~~~~~ {year} {month} stat line-up ~~~~~~~~~~~~~~~~~")
 
     # N81673 Archer
     if "N81673" in fleet:
-        df_N81673 = db_data_getter("N81673", month)
+        df_N81673 = db_data_getter("N81673", month, year)
         # Catch condition where there are is no flight history
         if not df_N81673.empty:
             print(f" ~~~~~~~~~~~~~~~~~ Stats for N81673 (Archer) ~~~~~~~~~~~~~~~~~")
             dist_travelled(df_N81673)
-            time_aloft("N81673", month)
-            airports_visited("N81673", month)
+            time_aloft("N81673", month, year)
+            airports_visited("N81673", month, year)
 
     # N3892Q C172 (OJC)
     if "N3892Q" in fleet:
-        df_N3892Q = db_data_getter("N3892Q", month)
+        df_N3892Q = db_data_getter("N3892Q", month, year)
         # Catch condition where there are is no flight history
         if not df_N3892Q.empty:
             print(f" ~~~~~~~~~~~~~~~~~ Stats for N3892Q (C172) ~~~~~~~~~~~~~~~~~")
             dist_travelled(df_N3892Q)
-            time_aloft("N3892Q", month)
-            airports_visited("N3892Q", month)
+            time_aloft("N3892Q", month, year)
+            airports_visited("N3892Q", month, year)
 
     # N20389 C172 (OJC)
     if "N20389" in fleet:
-        df_N20389 = db_data_getter("N20389", month)
+        df_N20389 = db_data_getter("N20389", month, year)
         # Catch condition where there are is no flight history
         if not df_N20389.empty:
             print(f" ~~~~~~~~~~~~~~~~~ Stats for N20389 (C172) ~~~~~~~~~~~~~~~~~")
             dist_travelled(df_N20389)
-            time_aloft("N20389", month)
-            airports_visited("N20389", month)
+            time_aloft("N20389", month, year)
+            airports_visited("N20389", month, year)
 
     # N182WK C182 (LXT)
     if "N182WK" in fleet:
-        df_N182WK = db_data_getter("N182WK", month)
+        df_N182WK = db_data_getter("N182WK", month, year)
         # Catch condition where there are is no flight history
         if not df_N182WK.empty:
             print(f" ~~~~~~~~~~~~~~~~~ Stats for N182WK (C182) ~~~~~~~~~~~~~~~~~")
             dist_travelled(df_N182WK)
-            time_aloft("N182WK", month)
-            airports_visited("N182WK", month)
+            time_aloft("N182WK", month, year)
+            airports_visited("N182WK", month, year)
 
     # N58843 C182 (OJC)
     if "N58843" in fleet:
-        df_N58843 = db_data_getter("N58843", month)
+        df_N58843 = db_data_getter("N58843", month, year)
         # Catch condition where there are is no flight history
         if not df_N58843.empty:
             print(f" ~~~~~~~~~~~~~~~~~ Stats for N58843 (C182) ~~~~~~~~~~~~~~~~~")
             dist_travelled(df_N58843)
-            time_aloft("N58843", month)
-            airports_visited("N58843", month)
+            time_aloft("N58843", month, year)
+            airports_visited("N58843", month, year)
 
     # N82145 Saratoga
     if "N82145" in fleet:
-        df_N82145 = db_data_getter("N82145", month)
+        df_N82145 = db_data_getter("N82145", month, year)
         # Catch condition where there are is no flight history
         if not df_N82145.empty:
             print(f" ~~~~~~~~~~~~~~~~~ Stats for N82145 (Saratoga) ~~~~~~~~~~~~~~~~~")
             dist_travelled(df_N82145)
-            time_aloft("N82145", month)
-            airports_visited("N82145", month)
+            time_aloft("N82145", month, year)
+            airports_visited("N82145", month, year)
 
     # N4803P Debonair
     if "N4803P" in fleet:
-        df_N4803P = db_data_getter("N4803P", month)
+        df_N4803P = db_data_getter("N4803P", month, year)
         # Catch condition where there are is no flight history
         if not df_N4803P.empty:
             print(f" ~~~~~~~~~~~~~~~~~ Stats for N4803P (Debonair) ~~~~~~~~~~~~~~~~~")
             dist_travelled(df_N4803P)
-            time_aloft("N4803P", month)
-            airports_visited("N4803P", month)
+            time_aloft("N4803P", month, year)
+            airports_visited("N4803P", month, year)
 
 
 def airport_coordinates(airport):
@@ -1423,7 +1442,7 @@ def airport_coordinates(airport):
     return res
 
 
-def airports_plotter(aircraft, month):
+def airports_plotter(aircraft, month, year):
     """
     Determine the airports visited specifically to be used for plotting in Geopandas
 
@@ -1454,11 +1473,15 @@ def airports_plotter(aircraft, month):
         month = month_dates[month]
 
     try:
-        if month != "All":
+        if month != "All" and year != "All":
             mycursor.execute(f"SELECT * FROM flight_history "
-                             f"WHERE month(date)={month}")
+                             f"WHERE month(date)={month} and year(date)={year}")
+        elif year != "All":
+            mycursor.execute(f"SELECT * FROM flight_history "
+                             f"WHERE year(date)={year}")
         else:
             mycursor.execute(f"SELECT * FROM flight_history")
+
         hist = []
         for x in mycursor:
             # convert DATE format to string with underscores to allow to be used as table name
@@ -1491,14 +1514,16 @@ def airports_plotter(aircraft, month):
     return landing_hist_list
 
 
-def full_area_map(fleet, month, option, local):
+def full_area_map(fleet, month, year, option, local):
     """
     Use the lat/long data to plot a composite map of the KC area
 
     :param fleet: list of aircraft that will be plotted.
     :type fleet: list
-    :param month: month of data that will be pulled my MySQL.
+    :param month: month of data that will be pulled from MySQL.
     :type month: str
+    :param year: year of data that will be pulled from MySql
+    :type year: int
     :param option: "Points" or "Lines", to determine the graphing option.
     :type option: str
     :param local: False = total area map, True = Local KC map
@@ -1521,8 +1546,8 @@ def full_area_map(fleet, month, option, local):
 
     # N81673 Archer
     if "N81673" in fleet:
-        df_N81673 = db_data_getter("N81673", month)
-        airports_N81673 = airports_plotter("N81673", month)
+        df_N81673 = db_data_getter("N81673", month, year)
+        airports_N81673 = airports_plotter("N81673", month, year)
         # Catch condition where there are is no flight history
         if not df_N81673.empty:
             geom_N81673 = \
@@ -1546,8 +1571,8 @@ def full_area_map(fleet, month, option, local):
 
     # N3892Q C172 (OJC)
     if "N3892Q" in fleet:
-        df_N3892Q = db_data_getter("N3892Q", month)
-        airports_N3892Q = airports_plotter("N3892Q", month)
+        df_N3892Q = db_data_getter("N3892Q", month, year)
+        airports_N3892Q = airports_plotter("N3892Q", month, year)
         # Catch condition where there are is no flight history
         if not df_N3892Q.empty:
             geom_N3892Q = \
@@ -1572,8 +1597,8 @@ def full_area_map(fleet, month, option, local):
 
     # N20389 C172 (OJC)
     if "N20389" in fleet:
-        df_N20389 = db_data_getter("N20389", month)
-        airports_N20389 = airports_plotter("N20389", month)
+        df_N20389 = db_data_getter("N20389", month, year)
+        airports_N20389 = airports_plotter("N20389", month, year)
         # Catch condition where there are is no flight history
         if not df_N20389.empty:
             geom_N20389 = \
@@ -1598,8 +1623,8 @@ def full_area_map(fleet, month, option, local):
 
     # N182WK C182 (LXT)
     if "N182WK" in fleet:
-        df_N182WK = db_data_getter("N182WK", month)
-        airports_N182WK = airports_plotter("N182WK", month)
+        df_N182WK = db_data_getter("N182WK", month, year)
+        airports_N182WK = airports_plotter("N182WK", month, year)
         # Catch condition where there are is no flight history
         if not df_N182WK.empty:
             geom_N182WK = \
@@ -1624,8 +1649,8 @@ def full_area_map(fleet, month, option, local):
 
     # N58843 C182 (LXT)
     if "N58843" in fleet:
-        df_N58843 = db_data_getter("N58843", month)
-        airports_N58843 = airports_plotter("N58843", month)
+        df_N58843 = db_data_getter("N58843", month, year)
+        airports_N58843 = airports_plotter("N58843", month, year)
         # Catch condition where there are is no flight history
         if not df_N58843.empty:
             geom_N58843 = \
@@ -1650,8 +1675,8 @@ def full_area_map(fleet, month, option, local):
 
     # N82145 Saratoga
     if "N82145" in fleet:
-        df_N82145 = db_data_getter("N82145", month)
-        airports_N82145 = airports_plotter("N82145", month)
+        df_N82145 = db_data_getter("N82145", month, year)
+        airports_N82145 = airports_plotter("N82145", month, year)
         # Catch condition where there are is no flight history
         if not df_N82145.empty:
             geom_N82145 = \
@@ -1676,8 +1701,8 @@ def full_area_map(fleet, month, option, local):
 
     # N4803P Debonair
     if "N4803P" in fleet:
-        df_N4803P = db_data_getter("N4803P", month)
-        airports_N4803P = airports_plotter("N4803P", month)
+        df_N4803P = db_data_getter("N4803P", month, year)
+        airports_N4803P = airports_plotter("N4803P", month, year)
         # Catch condition where there are is no flight history
         if not df_N4803P.empty:
             geom_N4803P = \
@@ -1736,7 +1761,7 @@ def full_area_map(fleet, month, option, local):
     if month != "All":
         plt.title(f"{month} flight history")
     else:
-        plt.title(f"2022 flight history")
+        plt.title(f"{year} flight history")
 
     if not local:
         ctx.add_basemap(ax)
@@ -2006,17 +2031,20 @@ def main():
             return
         sel_aircraft_str = "   ".join(sel_aircraft)
 
-        # get the current month from the month combobox
+        # get the month from the month combobox
         sel_month = month_cb.get()
+
+        # get the year from the year combobox, convert to integer
+        sel_year = int(year_cb.get())
 
         # get the plotting option (points or strings) from the sel_options radio buttons
         sel_option = selected_option.get()
 
         # call the grapher
         if map_size == "full":
-            full_area_map(sel_aircraft, sel_month, sel_option, False)
+            full_area_map(sel_aircraft, sel_month, sel_year, sel_option, False)
         else:
-            full_area_map(sel_aircraft, sel_month, sel_option, True)
+            full_area_map(sel_aircraft, sel_month, sel_year, sel_option, True)
 
         # log the commands
         log_output.configure(state="normal")  # allow editing of the log
@@ -2040,10 +2068,13 @@ def main():
         if not sel_aircraft:
             error_none_selected()
 
-        # get the current month from the month combobox
+        # get the month from the month combobox
         sel_month = month_cb.get()
 
-        calculate_stats(sel_aircraft, sel_month)
+        # get the year from the year combobox, convert to integer
+        sel_year = int(year_cb.get())
+
+        calculate_stats(sel_aircraft, sel_month, sel_year)
 
         # log the commands
         log_output.configure(state="normal")  # allow editing of the log
@@ -2168,7 +2199,7 @@ def main():
         log_output.configure(state="disabled")  # disable editing of the log
 
     # define the row where the main buttons are
-    bot_button_row = 4
+    bot_button_row = 7
 
     # COMBOBOX: Select month
     selected_month = tk.StringVar()
@@ -2194,11 +2225,33 @@ def main():
     current_month = datetime.now().strftime("%B")
     month_cb.set(current_month)
 
+    # COMBOBOX: Select year
+    selected_year = tk.StringVar()
+    year_cb = ttk.Combobox(root, textvariable=selected_year)
+    # prevent typing a value
+    year_cb["state"] = "readonly"
+    # set values
+    year_cb["values"] = ["All", "2022", "2023"]
+    year_cb.grid(
+        column=0,
+        row=3,
+        padx=5,
+        sticky="N")
+
+    # LABEL: Select year
+    sel_year_lab = tk.Label(root, text="Select year:")
+    sel_year_lab.grid(
+        column=0,
+        row=2,
+        pady=5)
+    current_year = datetime.now().strftime("%Y")
+    year_cb.set(current_year)
+
     # LABEL: select aircraft
     fleet_lab = ttk.Label(root, text="Select aircraft:")
     fleet_lab.grid(
         column=0,
-        row=1,
+        row=4,
         sticky="S")
 
     # LISTBOX: to select which aircraft to manipulate
@@ -2210,7 +2263,7 @@ def main():
         selectmode="extended")
     fleet_listbox.grid(
         column=0,
-        row=2,
+        row=5,
         sticky="N")
 
     # BUTTON: Connect to MySQL Database
@@ -2268,16 +2321,24 @@ def main():
         column=1,
         row=1,
         columnspan=3,
-        rowspan=2,
+        rowspan=5,
         padx=25)
     # Disable editing of the output log. state="normal" will have to be called prior to every edit
     log_output.configure(state="disabled")
+
+    # LABEL: spacer to spread things apart a little more
+    spacer_lab = ttk.Label(root, text="")
+    spacer_lab.grid(
+        column=0,
+        columnspan=3,
+        row=7,
+        pady=25)
 
     # TEXT : URL txt input
     url_text = tk.Text(root, height=2, width=60)
     url_text.grid(
         column=2,
-        row=5,
+        row=8,
         rowspan=1,
         columnspan=2)
 
@@ -2288,7 +2349,7 @@ def main():
         command=lambda: url_data_getter())
     url_button.grid(
         column=1,
-        row=5,
+        row=8,
         sticky="E",
         pady=15)
 
@@ -2299,7 +2360,7 @@ def main():
         command=lambda: graph_aircraft("full"))
     aircraft_button.grid(
         column=1,
-        row=6,
+        row=9,
         sticky="E",
         pady=15)
 
@@ -2310,7 +2371,7 @@ def main():
         command=lambda: graph_aircraft("KC"))
     aircraft_button.grid(
         column=2,
-        row=6,
+        row=9,
         sticky="E",
         pady=15)
 
@@ -2330,7 +2391,7 @@ def main():
 
         rad_opt.grid(
             column=1,
-            row=7 + i
+            row=10 + i
         )
 
     # Execute the root window
