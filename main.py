@@ -237,6 +237,97 @@ def date_last_ran(tail_num):
         logger.debug(f" Date last ran updated successfully!")
 
 
+def lat_long_dist(lat1, lat2, lon1, lon2):
+    """
+    Calculate the distance between 2 sets of lat/long coordinates using the Haversine formula
+
+    :param lat1: Latitude point 1
+    :param lat2: Latitude point 2
+    :param lon1: Longitude point 1
+    :param lon2: Longitude point 2
+    :return: Distance between the two points in miles
+    :rtype: float
+    """
+    # The math module contains a function called radians which converts from degrees to radians.
+    lon1 = radians(lon1)
+    lon2 = radians(lon2)
+    lat1 = radians(lat1)
+    lat2 = radians(lat2)
+
+    # Haversine formula
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+    a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
+
+    c = 2 * asin(sqrt(a))
+
+    # Radius of earth in miles.
+    r = 3958.8
+
+    # calculate the result
+    return c * r
+
+
+def is_local(lat1, lat2, lon1, lon2, url):
+    """
+    Determine whether an flight was local. Local is 100 miles of KLXT airport.
+    Update the database using the url to find the table row. Flag was defaulted FALSE
+
+    :rtype: bool
+    """
+
+    # configure this as desired. 80 was chosen since LXT and OJC are ~20 miles apart, 20+80 should be ~100 mile radius
+    radial_dist = 80
+
+    # coordinates for LXT
+    lxt_lat = 38.9577
+    lxt_lon = -94.3739
+    # coordinates for OJC
+    ojc_lat = 38.9728
+    ojc_lon = -94.3732
+
+    # calculate distance to origin and destination from LXT and OJC
+    orig_dist_lxt = lat_long_dist(lat1, lxt_lat, lon1, lxt_lon)
+    dest_dist_lxt = lat_long_dist(lat2, lxt_lat, lon2, lxt_lon)
+    orig_dist_ojc = lat_long_dist(lat1, ojc_lat, lon1, ojc_lon)
+    dest_dist_ojc = lat_long_dist(lat2, ojc_lat, lon2, ojc_lon)
+
+    # logger.debug(f"LXT distance: {abs((int(dest_dist_lxt) - int(orig_dist_lxt)))}")
+    # logger.debug(f"OJC distance: {abs((int(dest_dist_ojc) - int(orig_dist_ojc)))}")
+
+    if abs((int(dest_dist_lxt) - int(orig_dist_lxt))) <= radial_dist \
+            or abs((int(dest_dist_ojc) - int(orig_dist_ojc))) <= radial_dist:
+        # update MySQL local flag to TRUE
+
+        # get the aircraft from the url
+        tail_num = url.split("/")[5]
+
+        db = mysql_connect(tail_num)
+        mycursor = db.cursor()
+
+        # fix the url to match how it is saved in the database
+        # TODO IMPROVE THE BELOW
+        url = url.split("/")
+        url = "/".join(url[3:-1])
+        url = "/" + url
+
+        try:
+            mycursor.execute(f"UPDATE {tail_num.lower()}.flight_history "
+                             f"SET local = true "
+                             f"WHERE url = \"{url}\"")
+            # commit the update to the database
+            db.commit()
+            sleep(1)
+            db.close()
+        except Exception as e:
+            logger.warning(f" Error while attempting to update local flag (is_local)")
+            logger.warning(e)
+        else:
+            logger.info(f" Flight was updated as local!")
+    else:
+        pass
+
+
 def unkw_airport_finder(url, orig_flag=False):
     """
     Determine which airport is the origin/destination airport by prompting for user input.
@@ -255,7 +346,7 @@ def unkw_airport_finder(url, orig_flag=False):
     # Establish new TKinter window
     finder = tk.Tk()
     finder.title("UNKW Airport Finder")
-    finder.geometry('390x150+400+400')
+    finder.geometry('390x150+400+400')  # TODO update the location to match the root window
     finder.resizable(False, False)
 
     # Bring the window to the top of the screen
@@ -588,7 +679,7 @@ def flightaware_history(aircraft):
 
     :param aircraft: aircraft ID. ex: N182WK
     :type aircraft: str
-    :return: pandas df = [date, route, dept_time, time_aloft, URL]
+    :return: pandas df = [date, route, dept_time, time_aloft, local, URL]
     """
     # requests headers
     headers = {
@@ -623,7 +714,7 @@ def flightaware_history(aircraft):
             sys.exit(e)
 
         # Define the dataframe
-        df = pd.DataFrame(columns=["date", "route", "dept_time", "time_aloft", "url"])
+        df = pd.DataFrame(columns=["date", "route", "dept_time", "time_aloft", "local", "url"])
 
         # Scrape data and save to panda dataframe
         rows = table.find_all("tr")
@@ -664,12 +755,12 @@ def flightaware_history(aircraft):
                 # If the airport is unknown it is listed as "Near" and no airport code given.
                 # unkw_airport_finder allows to modify the global variable and get the correct airport code
                 if "Near" in columns[2].text:
-                    Thread(target=unkw_airport_finder(url, orig_flag=True)).start()
+                    unkw_airport_finder(url, orig_flag=True)
                     origin = origin_fixed.upper().strip()
                 else:
                     origin = between_parentheses(columns[2].text)
                 if "Near" in columns[3].text:
-                    Thread(target=unkw_airport_finder(url, orig_flag=False)).start()
+                    unkw_airport_finder(url, orig_flag=False)
                     destination = destination_fixed.upper().strip()
                 else:
                     destination = between_parentheses(columns[3].text)
@@ -703,7 +794,7 @@ def flightaware_history(aircraft):
             route = route.replace("-", "_")
             dept_time = dept_time.replace(":", "_")
             # build a row to be exported to pandas
-            out = [date, route, dept_time[:-3:], aloft, url]
+            out = [date, route, dept_time[:-3:], aloft, 0, url]
             # build pandas
             df.loc[len(df)] = out
         logger.info(f" {aircraft} history saved successfully!")
@@ -792,11 +883,19 @@ def flightaware_getter(url):
                 kts = kts_columns[0].text.strip()
             else:
                 continue
-            builder = [time, latitude, longitude, kts, altitude]  # TODO MAKE THESE FLOATS AND INTS
-
+            builder = [time, float(latitude), float(longitude), int(kts), int(altitude)]  # TODO MAKE THESE FLOATS AND INTS
         # Sometimes an empty list is generated due to scraping, reject these.
         if len(builder) == 5:
             df.loc[len(df)] = builder
+
+    # Update the local flag, to be used for plotting
+    lat1 = df["latitude"].iloc[0]
+    lat2 = df["latitude"].iloc[-1]
+    lon1 = df["longitude"].iloc[0]
+    lon2 = df["longitude"].iloc[-1]
+
+    is_local(float(lat1), float(lat2), float(lon1), float(lon2), url)
+
     return df
 
 
@@ -809,7 +908,7 @@ def db_data_saver(aircraft):
     :rtype: None
     """
 
-    # Get pandas dataframe for plane history [date, route, dept_time, time_aloft, url]
+    # Get pandas dataframe for plane history [date, route, dept_time, time_aloft, local, url]
     hist_df = flightaware_history(aircraft)
 
     # catch edge case in flightaware_history, where no flight data exists from the past 14 days. Func will return None
@@ -827,7 +926,8 @@ def db_data_saver(aircraft):
                      "date DATE, "
                      "route VARCHAR(15), "
                      "dept_time VARCHAR(15), "
-                     "time_aloft VARCHAR(6), "
+                     "time_aloft VARCHAR(6),"
+                     "local BOOL, "
                      "url VARCHAR(100))")
 
     # Create SQLAlchemy engine to connect to MySQL Database
@@ -852,7 +952,7 @@ def db_data_saver(aircraft):
     # Delete duplicate data, since we are using if_exists="append" from above
     # Reference: https://phoenixnap.com/kb/mysql-remove-duplicate-rows#ftoc-heading-8
     mycursor.execute("CREATE TABLE IF NOT EXISTS flight_history_temp "
-                     "SELECT DISTINCT date, route, dept_time, time_aloft, url "
+                     "SELECT DISTINCT date, route, dept_time, time_aloft, local, url "
                      "FROM flight_history")
     mycursor.execute("DROP TABLE flight_history")
     mycursor.execute("ALTER TABLE flight_history_temp RENAME TO flight_history")
@@ -893,11 +993,11 @@ def db_data_saver(aircraft):
         try:
             # Create a flight details CHILD table
             mycursor.execute(f"CREATE TABLE {name}("
-                             "time MEDIUMINT(10), "
+                             "time TIME, "
                              "latitude FLOAT, "
                              "longitude FLOAT, "
                              "knots MEDIUMINT(5), "
-                             "altitude MEDIUMINT(5))")
+                             "altitude MEDIUMINT(6))")
         except Exception as e:
             logger.warning(f" Error while attempting to create table {name}")
             logger.warning(e)
@@ -915,7 +1015,7 @@ def db_data_saver(aircraft):
             hour = x[2]
             hour = hour[0:2:]
             name.append(date + "__" + x[1] + "__" + hour)
-            url_list.append(x[4])
+            url_list.append(x[5])
     except Exception as e:
         db.close()
         logger.critical(" An error occurred while trying to build the URL list! (db_data_saver)")
@@ -967,15 +1067,17 @@ def db_data_saver(aircraft):
     db.close()
 
 
-def db_data_getter(aircraft, month, year):
+def db_data_getter(aircraft, month, year, local):
     """
     Import data from MySQL and convert into pandas dataframe.
 
     :type aircraft: str
     :type month: str
     :type year: int
+    :type local: str
     :param aircraft: N# of club aircraft, used for MySQL schema name
     :param month: used to filter the schema tables
+    :param local: "true" or "false" string. "all" will return both true and false -- necessary for stats
     :return: pandas dataframe
     """
     # Establish connection with MySQL and init cursor
@@ -1012,18 +1114,23 @@ def db_data_getter(aircraft, month, year):
     if month != "All":
         month = month_dates[month]
 
+    # convert the local flag to "true or false" if "all"
+    if local == "all":
+        local = "true or false"
+
     # Use the flight history table
     try:
         if month != "All" and year != "All":
             mycursor.execute(f"SELECT * FROM flight_history "
-                             f"WHERE month(date)={month} and year(date)={year} "
+                             f"WHERE month(date)={month} and year(date)={year} and local = {local} "
                              f"ORDER BY date ASC")
         elif year != "All":
             mycursor.execute(f"SELECT * FROM flight_history "
-                             f"WHERE year(date)={year} "
+                             f"WHERE year(date)={year} and local = {local} "
                              f"ORDER BY date ASC")
         else:
             mycursor.execute(f"SELECT * FROM flight_history "
+                             f"WHERE local = {local}"
                              f"ORDER BY date ASC")
         hist = []
         for x in mycursor:
@@ -1080,38 +1187,7 @@ def calculate_stats(fleet, month, year):
         :return: Total distance travelled in miles
         :rtype: float(2)
         """
-
         # TODO dist_travelled needs to be reviewed. Output is not correct at all... showing 10,000 miles travelled
-        def lat_long_dist(lat1, lat2, lon1, lon2):
-            """
-            Calculate the distance between 2 sets of lat/long coordinates using the Haversine formula
-
-            :param lat1: Latitude point 1
-            :param lat2: Latitude point 2
-            :param lon1: Longitude point 1
-            :param lon2: Longitude point 2
-            :return: Distance between the two points in miles
-            :rtype: float
-            """
-            # The math module contains a function called radians which converts from degrees to radians.
-            lon1 = radians(lon1)
-            lon2 = radians(lon2)
-            lat1 = radians(lat1)
-            lat2 = radians(lat2)
-
-            # Haversine formula
-            dlon = lon2 - lon1
-            dlat = lat2 - lat1
-            a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
-
-            c = 2 * asin(sqrt(a))
-
-            # Radius of earth in miles.
-            r = 3958.8
-
-            # calculate the result
-            return c * r
-
         total_dist = 0
         latitude = []
         longitude = []
@@ -1279,7 +1355,7 @@ def calculate_stats(fleet, month, year):
 
     # N81673 Archer
     if "N81673" in fleet:
-        df_N81673 = db_data_getter("N81673", month, year)
+        df_N81673 = db_data_getter("N81673", month, year, "all")
         # Catch condition where there are is no flight history
         if not df_N81673.empty:
             print(f" ~~~~~~~~~~~~~~~~~ Stats for N81673 (Archer) ~~~~~~~~~~~~~~~~~")
@@ -1289,7 +1365,7 @@ def calculate_stats(fleet, month, year):
 
     # N3892Q C172 (OJC)
     if "N3892Q" in fleet:
-        df_N3892Q = db_data_getter("N3892Q", month, year)
+        df_N3892Q = db_data_getter("N3892Q", month, year, "all")
         # Catch condition where there are is no flight history
         if not df_N3892Q.empty:
             print(f" ~~~~~~~~~~~~~~~~~ Stats for N3892Q (C172) ~~~~~~~~~~~~~~~~~")
@@ -1299,7 +1375,7 @@ def calculate_stats(fleet, month, year):
 
     # N20389 C172 (OJC)
     if "N20389" in fleet:
-        df_N20389 = db_data_getter("N20389", month, year)
+        df_N20389 = db_data_getter("N20389", month, year, "all")
         # Catch condition where there are is no flight history
         if not df_N20389.empty:
             print(f" ~~~~~~~~~~~~~~~~~ Stats for N20389 (C172) ~~~~~~~~~~~~~~~~~")
@@ -1309,7 +1385,7 @@ def calculate_stats(fleet, month, year):
 
     # N182WK C182 (LXT)
     if "N182WK" in fleet:
-        df_N182WK = db_data_getter("N182WK", month, year)
+        df_N182WK = db_data_getter("N182WK", month, year, "all")
         # Catch condition where there are is no flight history
         if not df_N182WK.empty:
             print(f" ~~~~~~~~~~~~~~~~~ Stats for N182WK (C182) ~~~~~~~~~~~~~~~~~")
@@ -1319,7 +1395,7 @@ def calculate_stats(fleet, month, year):
 
     # N58843 C182 (OJC)
     if "N58843" in fleet:
-        df_N58843 = db_data_getter("N58843", month, year)
+        df_N58843 = db_data_getter("N58843", month, year, "all")
         # Catch condition where there are is no flight history
         if not df_N58843.empty:
             print(f" ~~~~~~~~~~~~~~~~~ Stats for N58843 (C182) ~~~~~~~~~~~~~~~~~")
@@ -1329,7 +1405,7 @@ def calculate_stats(fleet, month, year):
 
     # N82145 Saratoga
     if "N82145" in fleet:
-        df_N82145 = db_data_getter("N82145", month, year)
+        df_N82145 = db_data_getter("N82145", month, year, "all")
         # Catch condition where there are is no flight history
         if not df_N82145.empty:
             print(f" ~~~~~~~~~~~~~~~~~ Stats for N82145 (Saratoga) ~~~~~~~~~~~~~~~~~")
@@ -1339,7 +1415,7 @@ def calculate_stats(fleet, month, year):
 
     # N4803P Debonair
     if "N4803P" in fleet:
-        df_N4803P = db_data_getter("N4803P", month, year)
+        df_N4803P = db_data_getter("N4803P", month, year, "all")
         # Catch condition where there are is no flight history
         if not df_N4803P.empty:
             print(f" ~~~~~~~~~~~~~~~~~ Stats for N4803P (Debonair) ~~~~~~~~~~~~~~~~~")
@@ -1534,19 +1610,27 @@ def full_area_map(fleet, month, year, option, local):
 
     # Define the map size
     if not local:
+        loc_flag = "false"
         ax = plt.subplot()
         # hide the x and y-axis labels
         ax.get_xaxis().set_visible(False)
         ax.get_yaxis().set_visible(False)
     else:
-        KC = ctx.Place("Kansas City", zoom=12)
+        loc_flag = "true"
+        ax = plt.subplot()
+        # hide the x and y-axis labels
+        ax.get_xaxis().set_visible(False)
+        ax.get_yaxis().set_visible(False)
+
+        # 12/3/22 commented out below, testing out loc_flag implementation.
+        # KC = ctx.Place("Kansas City", zoom=12)
         # "Loch Lloyd, MO", zoom=9
-        ax = KC.plot()
-        ax.autoscale(False)
+        # ax = KC.plot()
+        # ax.autoscale(False)
 
     # N81673 Archer
     if "N81673" in fleet:
-        df_N81673 = db_data_getter("N81673", month, year)
+        df_N81673 = db_data_getter("N81673", month, year, loc_flag)
         airports_N81673 = airports_plotter("N81673", month, year)
         # Catch condition where there are is no flight history
         if not df_N81673.empty:
@@ -1571,7 +1655,7 @@ def full_area_map(fleet, month, year, option, local):
 
     # N3892Q C172 (OJC)
     if "N3892Q" in fleet:
-        df_N3892Q = db_data_getter("N3892Q", month, year)
+        df_N3892Q = db_data_getter("N3892Q", month, year, loc_flag)
         airports_N3892Q = airports_plotter("N3892Q", month, year)
         # Catch condition where there are is no flight history
         if not df_N3892Q.empty:
@@ -1597,7 +1681,7 @@ def full_area_map(fleet, month, year, option, local):
 
     # N20389 C172 (OJC)
     if "N20389" in fleet:
-        df_N20389 = db_data_getter("N20389", month, year)
+        df_N20389 = db_data_getter("N20389", month, year, loc_flag)
         airports_N20389 = airports_plotter("N20389", month, year)
         # Catch condition where there are is no flight history
         if not df_N20389.empty:
@@ -1623,7 +1707,7 @@ def full_area_map(fleet, month, year, option, local):
 
     # N182WK C182 (LXT)
     if "N182WK" in fleet:
-        df_N182WK = db_data_getter("N182WK", month, year)
+        df_N182WK = db_data_getter("N182WK", month, year, loc_flag)
         airports_N182WK = airports_plotter("N182WK", month, year)
         # Catch condition where there are is no flight history
         if not df_N182WK.empty:
@@ -1649,7 +1733,7 @@ def full_area_map(fleet, month, year, option, local):
 
     # N58843 C182 (LXT)
     if "N58843" in fleet:
-        df_N58843 = db_data_getter("N58843", month, year)
+        df_N58843 = db_data_getter("N58843", month, year, loc_flag)
         airports_N58843 = airports_plotter("N58843", month, year)
         # Catch condition where there are is no flight history
         if not df_N58843.empty:
@@ -1675,7 +1759,7 @@ def full_area_map(fleet, month, year, option, local):
 
     # N82145 Saratoga
     if "N82145" in fleet:
-        df_N82145 = db_data_getter("N82145", month, year)
+        df_N82145 = db_data_getter("N82145", month, year, loc_flag)
         airports_N82145 = airports_plotter("N82145", month, year)
         # Catch condition where there are is no flight history
         if not df_N82145.empty:
@@ -1701,7 +1785,7 @@ def full_area_map(fleet, month, year, option, local):
 
     # N4803P Debonair
     if "N4803P" in fleet:
-        df_N4803P = db_data_getter("N4803P", month, year)
+        df_N4803P = db_data_getter("N4803P", month, year, loc_flag)
         airports_N4803P = airports_plotter("N4803P", month, year)
         # Catch condition where there are is no flight history
         if not df_N4803P.empty:
@@ -1763,8 +1847,8 @@ def full_area_map(fleet, month, year, option, local):
     else:
         plt.title(f"{year} flight history")
 
-    if not local:
-        ctx.add_basemap(ax)
+    # add the basemap
+    ctx.add_basemap(ax)
 
     plt.show()
     pass
