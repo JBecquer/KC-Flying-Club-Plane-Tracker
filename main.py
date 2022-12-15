@@ -356,9 +356,9 @@ def unkw_airport_finder(url, orig_flag=False):
 
     # Determine destination or origin, used to label the textbox. Helps when looking at FlightAware tables
     if not orig_flag:
-        orig_dest = "ORIGIN"
-    else:
         orig_dest = "DESTINATION"
+    else:
+        orig_dest = "ORIGIN"
 
     # LABEL: Origin or destination
     orig_label = tk.Label(finder, text=orig_dest, font=("Helvetica", 12, "bold"))
@@ -790,6 +790,12 @@ def flightaware_history(aircraft):
             dept_time = convert24(dept_time)
 
             aloft = columns[6].text.strip()
+
+            # 12/14/22 Added edge-case where flight duration is "Diverted" instead of time
+            if aloft == "Diverted":
+                logger.warning("Duration is \"Diverted\". This flight is being skipped.")
+                logger.warning(f"{url}")
+                continue
 
             route = route.replace("-", "_")
             dept_time = dept_time.replace(":", "_")
